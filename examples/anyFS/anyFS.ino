@@ -20,13 +20,16 @@
 //#include <SD.h>
 //#include <SD_MMC.h>
 //#include <SPIFFS.h>
-//#include <LittleFS.h>
+#include <LittleFS.h>
 //#include <PSRamFS.h>
 
 #include <esp32fota.h> // fota pulls WiFi library
 
-//CryptoMemAsset *MyRSAKey    = new CryptoMemAsset("RSA Public Key",     rsa_key_pub,           strlen(rsa_key_pub)+1 );
-//CryptoMemAsset *MyCertChain = new CryptoMemAsset("Certificates Chain", github_com_cert_chain, strlen(github_com_cert_chain)+1 );
+CryptoFileAsset *MyRootCA = new CryptoFileAsset( "/github-com.cert.pem", &LittleFS );
+
+
+//CryptoMemAsset *MyRSAKey = new CryptoMemAsset("RSA Public Key",     rsa_key_pub, strlen(rsa_key_pub)+1 );
+//CryptoMemAsset *MyRootCA = new CryptoMemAsset("Certificates Chain", root_ca,     strlen(root_ca)+1 );
 
 
 // Change to your WiFi credentials
@@ -34,7 +37,7 @@ const char *ssid = "";
 const char *password = "";
 
 // esp32fota esp32fota("<Type of Firme for this device>", <this version>, <validate signature>, <allow insecure TLS>);
-esp32FOTA esp32FOTA("esp32-fota-http", 1, false, true);
+esp32FOTA esp32FOTA("esp32-fota-http", 1, false );
 
 void setup_wifi()
 {
@@ -53,19 +56,26 @@ void setup_wifi()
 
   Serial.println("");
   Serial.println(WiFi.localIP());
+
+  esp32FOTA.setRootCA( MyRootCA );
+
 }
 
 
 void setup()
 {
+  Serial.begin(115200);
   // Provide filesystem with root_ca.pem to validate server certificate
-  //LittleFS.begin();
+  if( ! LittleFS.begin( false ) ) {
+    Serial.println("LittleFS Mounting failed, aborting!");
+    while(1) vTaskDelay(1);
+  }
   // use this when more than one filesystem is used in the sketch
   // esp32FOTA.setCertFileSystem( &SD );
 
   esp32FOTA.checkURL = "https://github.com/tobozo/esp32FOTA/raw/tests/examples/anyFS/test/stage1/firmware.json";
 
-  Serial.begin(115200);
+
   setup_wifi();
 }
 
