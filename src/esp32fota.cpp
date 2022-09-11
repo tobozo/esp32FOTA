@@ -203,7 +203,7 @@ void esp32FOTA::execOTA( int partition )
                 Serial.println("OTA done!");
                 if (Update.isFinished())
                 {
-                    Serial.println("Update successfully completed. Rebooting.");
+                    Serial.println("Update successfully completed.");
                 }
                 else
                 {
@@ -613,7 +613,7 @@ void secureEsp32FOTA::executeOTA( int partition )
                     Serial.println("OTA done!");
                     if (Update.isFinished())
                     {
-                        Serial.println("Update successfully completed. Rebooting.");
+                        Serial.println("Update successfully completed.");
                     }
                     else
                     {
