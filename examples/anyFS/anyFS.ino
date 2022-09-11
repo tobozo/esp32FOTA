@@ -20,26 +20,30 @@
 //#include <SD.h>
 //#include <SD_MMC.h>
 //#include <SPIFFS.h>
-#include <LittleFS.h>
+//#include <LittleFS.h>
 //#include <PSRamFS.h>
 
 #include <esp32fota.h> // fota pulls WiFi library
+
+//CryptoMemAsset *MyRSAKey    = new CryptoMemAsset("RSA Public Key",     rsa_key_pub,           strlen(rsa_key_pub)+1 );
+//CryptoMemAsset *MyCertChain = new CryptoMemAsset("Certificates Chain", github_com_cert_chain, strlen(github_com_cert_chain)+1 );
 
 
 // Change to your WiFi credentials
 const char *ssid = "";
 const char *password = "";
 
-// esp32fota esp32fota("<Type of Firme for this device>", <this version>, <validate signature>);
-esp32FOTA esp32FOTA("esp32-fota-http", 1, false);
+// esp32fota esp32fota("<Type of Firme for this device>", <this version>, <validate signature>, <allow insecure TLS>);
+esp32FOTA esp32FOTA("esp32-fota-http", 1, false, true);
 
 void setup_wifi()
 {
   delay(10);
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
+  Serial.print("Connecting to WiFi ");
+  Serial.println( WiFi.macAddress() );
+  //Serial.println(ssid);
 
-  WiFi.begin(ssid, password);
+  WiFi.begin(/*ssid, password*/);
 
   while (WiFi.status() != WL_CONNECTED)
   {
@@ -51,13 +55,16 @@ void setup_wifi()
   Serial.println(WiFi.localIP());
 }
 
+
 void setup()
 {
   // Provide filesystem with root_ca.pem to validate server certificate
-  LittleFS.begin();
-  esp32FOTA.setCertFileSystem( &LittleFS );
+  //LittleFS.begin();
+  // use this when more than one filesystem is used in the sketch
+  // esp32FOTA.setCertFileSystem( &SD );
 
-  esp32FOTA.checkURL = "https://server/fota/fota.json";
+  esp32FOTA.checkURL = "https://github.com/tobozo/esp32FOTA/raw/tests/examples/anyFS/test/stage1/firmware.json";
+
   Serial.begin(115200);
   setup_wifi();
 }
@@ -71,6 +78,6 @@ void loop()
     esp32FOTA.execOTA();
   }
 
-  delay(2000);
+  delay(20000);
 }
 
