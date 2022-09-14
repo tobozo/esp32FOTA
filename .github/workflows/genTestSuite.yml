@@ -41,25 +41,10 @@ on:
         - large_spiffs
         default: 'default_spiffs'
 
-      # mkspiffs -c /path/to/data/ -p 256 -b 4096 -s 196608 min.spiffs.bin # min_spiffs
-      # mkspiffs -c /path/to/data/ -p 256 -b 4096 -s 7274496 large.spiffs.bin # large_spiffs
-      # mkspiffs -c /path/to/data/ -p 256 -b 4096 -s 1507328 default.spiffs.bin # default_spiffs
-      # mklittlefs -c /path/to/data/ -p 256 -b 4096 -s 196608 min.littlefs.bin # min_spiffs
-      # mklittlefs -c /path/to/data/ -p 256 -b 4096 -s 7274496 large.littlefs.bin # large_spiffs
-      # mklittlefs -c /path/to/data/ -p 256 -b 4096 -s 1507328 default.littlefs.bin # default_spiffs
-
 jobs:
-  #on_dispatch:
-    #${{ inputs.firmware_type }}
-    #${{ inputs.manifest_url }}
-    #${{ inputs.manifest_host }}
-    #${{ inputs.manifest_port }}
-    #${{ inputs.manifest_bin_path }}
-    #${{ inputs.board_fqbn }}
-    #${{ inputs.partition_scheme }}
-
 
   matrix_build:
+
     name: ${{ matrix.sketch }}@${{ matrix.stage }}
     runs-on: ubuntu-latest
 
@@ -73,6 +58,7 @@ jobs:
           - { stage: 5, sketch:"5.final-stage.ino"      }
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v2
         with:
@@ -88,26 +74,21 @@ jobs:
         with:
           platform-url: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_dev_index.json
           arduino-board-fqbn: ${{ inputs.board_fqbn }}:PartitionScheme=${{inputs.partition_scheme}}
-          # arduino-platform: esp32:esp32@${{ matrix.sdk-version }}
           required-libraries: ArduinoJson
           extra-arduino-lib-install-args: --no-deps
-          # extra-arduino-cli-args: ${{ matrix.extra-arduino-cli-args }}
           extra-arduino-cli-args: "--warnings default " # see https://github.com/ArminJo/arduino-test-compile/issues/28
           sketch-names: ${{ matrix.sketch }}
           set-build-path: true
-          build-properties: ${{ toJson(matrix.build-properties) }}
-          #debug-install: true
+          # build-properties: ${{ toJson(matrix.build-properties) }}
+          # arduino-platform: esp32:esp32@${{ matrix.sdk-version }}
+          # extra-arduino-cli-args: ${{ matrix.extra-arduino-cli-args }}
+          # debug-install: true
 
       - name: Save compiled binaries
         run: |
           mkdir -p /home/runner/builds
           full_ino_bin_path=`find . | grep "${{ matrix.sketch }}.ino.bin"`
           cp $full_ino_bin_path /home/runner/builds/
-
-      #- name: Install mkspiffs/littlefs
-      #  run: |
-      #    wget https://github.com/igrr/mkspiffs/releases/download/0.2.3/mkspiffs-0.2.3-arduino-esp32-linux64.tar.gz
-      #    tar -xvf mkspiffs-0.2.3-arduino-esp32-linux64.tar.gz --strip-components 1
 
       - name: Create filesystem images
         run: |
@@ -131,14 +112,15 @@ jobs:
     # wait until matrix jobs are all finished
     needs: matrix_build
     steps:
+
       - name: Checkout
         uses: actions/checkout@v2
+
       - name: Create artifacts dir
-        #if: startsWith(github.ref, 'refs/tags/')
         run: mkdir -p /home/runner/builds
+
       - name: Download artifacts
         uses: actions/download-artifact@v2
-        #if: startsWith(github.ref, 'refs/tags/')
         with:
           path: /home/runner/builds
 
@@ -151,9 +133,12 @@ jobs:
           sed -i -e 's/FIRMWARE_PORT/${{ inputs.manifest_port }}/g' $firmware_json_path
           sed -i -e 's/FIRMWARE_PATH/${{ inputs.manifest_bin_path }}/g' $firmware_json_path
           cat $firmware_json_path
+
       - name: Release check
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
             /home/runner/builds/**
+
+
