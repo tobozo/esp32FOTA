@@ -49,8 +49,7 @@ on:
       # mklittlefs -c /path/to/data/ -p 256 -b 4096 -s 1507328 default.littlefs.bin # default_spiffs
 
 jobs:
-  on_dispatch:
-
+  #on_dispatch:
     #${{ inputs.firmware_type }}
     #${{ inputs.manifest_url }}
     #${{ inputs.manifest_host }}
