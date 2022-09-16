@@ -69,8 +69,8 @@ size_t CryptoFileAsset::size()
     }
     if( fs ) { // fetch file contents
         if( ! fs_read_file() ) {
-          log_w("Invalid contents!");
-          return 0;
+            log_w("Invalid contents!");
+            return 0;
         }
         len = contents.size();
     } else {
@@ -79,7 +79,6 @@ size_t CryptoFileAsset::size()
     }
     return len;
 }
-
 
 
 
@@ -135,11 +134,10 @@ void esp32FOTA::setupCryptoAssets()
 }
 
 
-
 // SHA-Verify the OTA partition after it's been written
 // https://techtutorialsx.com/2018/05/10/esp32-arduino-mbed-tls-using-the-sha-256-algorithm/
 // https://github.com/ARMmbed/mbedtls/blob/development/programs/pkey/rsa_verify.c
-bool esp32FOTA::validate_sig( unsigned char *signature, uint32_t firmware_size )
+bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *signature, uint32_t firmware_size )
 {
     int ret = 1;
     size_t pubkeylen = PubKey ? PubKey->size()+1 : 0;
@@ -163,7 +161,7 @@ bool esp32FOTA::validate_sig( unsigned char *signature, uint32_t firmware_size )
         return false;
     }
 
-    const esp_partition_t* partition = esp_ota_get_next_update_partition(NULL);
+    //const esp_partition_t* partition = esp_ota_get_next_update_partition(NULL);
 
     if( !partition ) {
         log_e( "Could not find update partition!" );
@@ -249,7 +247,7 @@ void esp32FOTA::execOTA()
             execOTA( U_SPIFFS, false );
         }
     } else {
-      log_i("This update is for U_FLASH only");
+        log_i("This update is for U_FLASH only");
     }
     // handle the application partition and restart on success
     execOTA( U_FLASH, true );
@@ -275,7 +273,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
         break;
     }
 
-    int contentLength = 0;
+    size_t contentLength = 0;
     bool isValidContentType = false;
     const char* rootcastr = nullptr;
 
@@ -308,10 +306,10 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
     }
 
     if( extraHTTPHeaders.size() > 0 ) {
-      // add custom headers provided by user e.g. http.addHeader("Authorization", "Basic " + auth)
-      for( const auto &header : extraHTTPHeaders ) {
-        http.addHeader(header.first, header.second);
-      }
+        // add custom headers provided by user e.g. http.addHeader("Authorization", "Basic " + auth)
+        for( const auto &header : extraHTTPHeaders ) {
+            http.addHeader(header.first, header.second);
+        }
     }
 
     // TODO: add more watched headers e.g. Authorization: Signature keyId="rsa-key-1",algorithm="rsa-sha256",signature="Base64(RSA-SHA256(signing string))"
@@ -333,36 +331,49 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
             // TODO: use tarGzStreamUpdater
         }
     } else {
-        // Connect to webserver failed
-        // May be try?
-        // Probably a choppy network?
-        log_i( "Connection to %s failed with httpCode %i. Please check your setup", UpdateURL, httpCode );
-        // retry??
-        // execOTA();
-    }
+        switch( httpCode ) {
+            // 1xx = Hold on
+            // 2xx = Here you go
+            // 3xx = Go away
+            // 4xx = You fucked up
+            // 5xx = I fucked up
 
-       // Check what is the contentLength and if content type is `application/octet-stream`
-    log_i("contentLength : %i, isValidContentType : %s", contentLength, String(isValidContentType));
-
-    // check contentLength and content type
-    if( !contentLength || !isValidContentType ) {
-        Serial.println("There was no content in the http response");
+            case 204: log_e("Status: 204 (No contents), "); break;
+            case 401: log_e("Status: 401 (Unauthorized), check setExtraHTTPHeader() values"); break;
+            case 403: log_e("Status: 403 (Forbidden), check path on webserver?"); break;
+            case 404: log_e("Status: 404 (Not Found), also a palindrom, check path in manifest?"); break;
+            case 418: log_e("Status: 418 (I'm a teapot), Brit alert!"); break;
+            case 429: log_e("Status: 429 (Too many requests), throttle things down?"); break;
+            case 500: log_e("Status: 500 (Internal Server Error), you broke the webs!"); break;
+            default:  log_e("Status: %i. Please check your setup", httpCode); break;
+        }
         http.end();
         return;
     }
 
-    Stream& stream = http.getStream();
+    // TODO: Not all streams respond with a content length.
+    // TODO: Set contentLength to UPDATE_SIZE_UNKNOWN when content type is valid.
 
-    if( _check_sig ) {
+    // check contentLength and content type
+    if( !contentLength || !isValidContentType ) {
+        Serial.printf("There was no content in the http response: (length: %i, valid: %s)\n", contentLength, isValidContentType?"true":"false");
+        http.end();
+        return;
+    }
+
+    log_i("contentLength : %i, isValidContentType : %s", contentLength, String(isValidContentType));
+
+    if( _check_sig && contentLength != UPDATE_SIZE_UNKNOWN ) {
         // If firmware is signed, extract signature and decrease content-length by 512 bytes for signature
-        contentLength = contentLength - 512;
+        contentLength -= 512;
     }
     // Check if there is enough available space on the partition to perform the Update
     bool canBegin = Update.begin( contentLength, partition );
 
     if( !canBegin ) {
-        Serial.println("Not enough space to begin OTA");
+        Serial.println("Not enough space to begin OTA, partition size mismatch?");
         http.end();
+        if( onUpdateBeginFail ) onUpdateBeginFail( partition );
         return;
     }
 
@@ -375,68 +386,130 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
         });
     }
 
+    Stream& stream = http.getStream();
+
     unsigned char signature[512];
     if( _check_sig ) {
         stream.readBytes( signature, 512 );
     }
-    Serial.printf("Begin %s OTA. This may take 2 - 5 mins to complete. Things might be quiet for a while.. Patience!", partition==U_FLASH?"Firmware":"Filesystem");
-    // No activity would appear on the Serial monitor
-    // So be patient. This may take 2 - 5mins to complete
+    Serial.printf("Begin %s OTA. This may take 2 - 5 mins to complete. Things might be quiet for a while.. Patience!\n", partition==U_FLASH?"Firmware":"Filesystem");
+    // Some activity may appear in the Serial monitor during the update (depends on Update.onProgress).
+    // This may take 2 - 5mins to complete
     size_t written = Update.writeStream( stream );
 
-    if (written == contentLength) {
+    if ( written == contentLength) {
         Serial.println("Written : " + String(written) + " successfully");
+    } else if ( contentLength == UPDATE_SIZE_UNKNOWN ) {
+        Serial.println("Written : " + String(written) + " successfully");
+        contentLength = written; // populate value as it was unknown until now
     } else {
-        Serial.println("Written only : " + String(written) + "/" + String(contentLength) + ". Retry?");
-        // retry??
-        // execOTA();
+        Serial.println("Written only : " + String(written) + "/" + String(contentLength) + ". Premature end of stream?");
+        contentLength = written; // flatten value to prevent overflow when checking signature
     }
 
     if (!Update.end()) {
-      Serial.println("Error Occurred. Error #: " + String(Update.getError()));
-      return;
+        Serial.println("An Update Error Occurred. Error #: " + String(Update.getError()));
+        // #define UPDATE_ERROR_OK                 (0)
+        // #define UPDATE_ERROR_WRITE              (1)
+        // #define UPDATE_ERROR_ERASE              (2)
+        // #define UPDATE_ERROR_READ               (3)
+        // #define UPDATE_ERROR_SPACE              (4)
+        // #define UPDATE_ERROR_SIZE               (5)
+        // #define UPDATE_ERROR_STREAM             (6)
+        // #define UPDATE_ERROR_MD5                (7)
+        // #define UPDATE_ERROR_MAGIC_BYTE         (8)
+        // #define UPDATE_ERROR_ACTIVATE           (9)
+        // #define UPDATE_ERROR_NO_PARTITION       (10)
+        // #define UPDATE_ERROR_BAD_ARGUMENT       (11)
+        // #define UPDATE_ERROR_ABORT              (12)
+        return;
     }
 
+    http.end();
+
+    if( onUpdateEnd ) onUpdateEnd( partition );
+
     if( _check_sig ) { // check signature
-        if( !validate_sig( signature, contentLength ) ) {
+
+        getPartition( partition ); // retrieve the last updated partition pointer
+
+        #define CHECK_SIG_ERROR_PARTITION_NOT_FOUND -1
+        #define CHECK_SIG_ERROR_VALIDATION_FAILED   -2
+
+        if( !_target_partition ) {
+            Serial.println("Can't access partition #%i to check signature!");
+            if( onUpdateCheckFail ) onUpdateCheckFail( partition, CHECK_SIG_ERROR_PARTITION_NOT_FOUND );
+            return;
+        }
+
+        if( !validate_sig( _target_partition, signature, contentLength ) ) {
+
             if( partition == U_FLASH ) { // partition was marked as bootable, but signature validation failed, undo!
-                const esp_partition_t* partition = esp_ota_get_running_partition();
-                esp_ota_set_boot_partition( partition );
+                const esp_partition_t* bootable_partition = esp_ota_get_running_partition();
+                esp_ota_set_boot_partition( bootable_partition );
             } else if( partition == U_SPIFFS ) { // bummer!
                 // SPIFFS/LittleFS partition was already overwritten and unlike U_FLASH (has OTA0/OTA1) this can't be rolled back.
                 // TODO: onValidationFail decision tree with [erase-partition, mark-unsafe, keep-as-is]
             }
-            Serial.println( "Signature check failed!" );
-            http.end();
+            // erase partition
+            esp_partition_erase_range( _target_partition, _target_partition->address, _target_partition->size );
+
+            if( onUpdateCheckFail ) onUpdateCheckFail( partition, CHECK_SIG_ERROR_VALIDATION_FAILED );
+
+            Serial.println("Signature check failed!");
             if( restart_after ) {
                 Serial.println("Rebooting.");
                 ESP.restart();
             }
             return;
         } else {
-            log_i( "Signature OK" );
+            Serial.println("Signature check successful!");
         }
     }
-    Serial.println("OTA done!");
+    //Serial.println("OTA Update complete!");
     if (Update.isFinished()) {
+
+        if( onUpdateFinished ) onUpdateFinished( partition, restart_after );
+
         Serial.println("Update successfully completed.");
-        http.end();
         if( restart_after ) {
             Serial.println("Rebooting.");
             ESP.restart();
         }
         return;
     } else {
-        Serial.println("Update not finished? Something went wrong!");
+        Serial.println("Update not finished! Something went wrong!");
     }
 }
+
+
+void esp32FOTA::getPartition( int update_partition )
+{
+    _target_partition = nullptr;
+    if( update_partition == U_FLASH ) {
+        // select the last-updated OTA partition
+        _target_partition = esp_ota_get_next_update_partition(NULL);
+    } else if( update_partition == U_SPIFFS ) {
+        // iterate through partitions table to find the spiffs/littlefs partition
+        esp_partition_iterator_t iterator = esp_partition_find( ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, NULL );
+        while( iterator != NULL ) {
+            _target_partition = (esp_partition_t *)esp_partition_get( iterator );
+            iterator = esp_partition_next( iterator );
+        }
+        esp_partition_iterator_release( iterator );
+    } else {
+        // wut ?
+        log_e("Unhandled partition type #%i, must be one of U_FLASH / U_SPIFFS", update_partition );
+    }
+}
+
 
 
 bool esp32FOTA::checkJSONManifest(JsonVariant doc)
 {
     if(strcmp(doc["type"].as<const char *>(), _firmwareType.c_str()) != 0) {
-        log_i("Payload type in manifest %s doesn't match current firmware %s", doc["type"].as<const char *>(), _firmwareType.c_str() );
-        log_i("Doesn't match type: %s", _firmwareType.c_str() );
+        log_d("Payload type in manifest %s doesn't match current firmware %s", doc["type"].as<const char *>(), _firmwareType.c_str() );
+        log_d("Doesn't match type: %s", _firmwareType.c_str() );
         return false;  // Move to the next entry in the manifest
     }
     log_i("Payload type in manifest %s matches current firmware %s", doc["type"].as<const char *>(), _firmwareType.c_str() );
@@ -445,13 +518,13 @@ bool esp32FOTA::checkJSONManifest(JsonVariant doc)
 
     if(doc["version"].is<uint16_t>()) {
         uint16_t v = doc["version"].as<uint16_t>();
-        log_i("JSON version: %d (int)", v);
+        log_d("JSON version: %d (int)", v);
         _payloadVersion = semver_t {v};
     } else if (doc["version"].is<const char *>()) {
         const char* c = doc["version"].as<const char *>();
-        log_i("JSON version: %s (semver)", c );
+        log_d("JSON version: %s (semver)", c );
         if (semver_parse(c, &_payloadVersion)) {
-            log_e( "Invalid semver string received in manifest. Defaulting to 0" );
+            log_w( "Invalid semver string received in manifest. Defaulting to 0" );
             _payloadVersion = semver_t {0};
         }
     } else {
@@ -518,31 +591,35 @@ bool esp32FOTA::checkJSONManifest(JsonVariant doc)
 
 bool esp32FOTA::execHTTPcheck()
 {
-    String useURL;
+    String useURL = checkURL;
     const char* rootcastr = nullptr;
 
     if (useDeviceID) {
-        // String deviceID = getDeviceID() ;
-        useURL = checkURL + "?id=" + getDeviceID();
-    } else {
-        useURL = checkURL;
+        // URL may already have GET values
+        String argseparator = (checkURL.indexOf('?') != -1 ) ? "&" : "?";
+        useURL += argseparator + "id=" + getDeviceID();
     }
 
-    log_i("Getting HTTP: %s",useURL.c_str());
-    log_i("------");
     if ((WiFi.status() != WL_CONNECTED)) {  //Check the current connection status
-        log_w("WiFi not connected - skipping HTTP check");
+        log_i("WiFi not connected - skipping HTTP check");
         return false;  // WiFi not connected
     }
 
+    log_i("Getting HTTP: %s", useURL.c_str());
+    log_i("------");
+
     HTTPClient http;
     WiFiClientSecure client;
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setFollowRedirects( HTTPC_STRICT_FOLLOW_REDIRECTS );
 
     if( useURL.substring( 0, 5 ) == "https" ) {
-        if (!_allow_insecure_https) {
+        if( _allow_insecure_https ) {
+            // We're downloading from a secure port, but we don't want to validate the root cert.
+            client.setInsecure();
+        } else {
+            // We're downloading from a secure port, and want to validate the root cert.
             if( !RootCA || RootCA->size() == 0 ) {
-                log_e("A strict security context has been set but no RootCA was provided");
+                log_e("A strict security context has been set but no RootCA was provided, aborting");
                 return false;
             }
             rootcastr = RootCA->get();
@@ -550,22 +627,19 @@ bool esp32FOTA::execHTTPcheck()
                 log_e("Unable to get RootCA, aborting");
                 return false;
             }
-            log_i( "Loading root_ca.pem" );
+            log_i("Loading root_ca.pem");
             client.setCACert( rootcastr );
-        } else {
-            // We're downloading from a secure port, but we don't want to validate the root cert.
-            client.setInsecure();
         }
-        http.begin(client, useURL);
+        http.begin( client, useURL );
     } else {
-        http.begin(useURL);         //Specify the URL
+        http.begin( useURL );
     }
 
     if( extraHTTPHeaders.size() > 0 ) {
-      // add custom headers provided by user e.g. http.addHeader("Authorization", "Basic " + auth)
-      for( const auto &header : extraHTTPHeaders ) {
-        http.addHeader(header.first, header.second);
-      }
+        // add custom headers provided by user e.g. http.addHeader("Authorization", "Basic " + auth)
+        for( const auto &header : extraHTTPHeaders ) {
+            http.addHeader(header.first, header.second);
+        }
     }
 
     int httpCode = http.GET();  //Make the request
@@ -593,7 +667,7 @@ bool esp32FOTA::execHTTPcheck()
     }
 
     if (JSONResult.is<JsonArray>()) {
-        // Although improbable given the size on JSONResult buffer, we already received an array of multiple firmware types
+        // Although improbable given the size on JSONResult buffer, we already received an array of multiple firmware types and/or versions
         JsonArray arr = JSONResult.as<JsonArray>();
         for (JsonVariant JSONDocument : arr) {
             if(checkJSONManifest(JSONDocument)) {
@@ -632,16 +706,9 @@ void esp32FOTA::forceUpdate(String firmwareURL, bool validate )
 
 void esp32FOTA::forceUpdate(String firmwareHost, uint16_t firmwarePort, String firmwarePath, bool validate )
 {
-    String firmwareURL;
-
-    if( firmwarePort == 443 || firmwarePort == 4433 ) {
-        firmwareURL = String( "https://");
-    } else {
-        firmwareURL = String( "http://" );
-    }
+    String firmwareURL = ( firmwarePort == 443 || firmwarePort == 4433 ) ? "https" : "http";
     firmwareURL += firmwareHost + ":" + String( firmwarePort ) + firmwarePath;
-
-    forceUpdate(firmwareURL, validate);
+    forceUpdate( firmwareURL, validate );
 }
 
 
@@ -650,8 +717,8 @@ void esp32FOTA::forceUpdate(bool validate )
     // Forces an update from a manifest, ignoring the version check
     if(!execHTTPcheck()) {
         if (!_firmwareUrl) {
-            // execHTTPcheck returns false if either the manifest is malformed or if the version isn't
-            // an upgrade. If _firmwareUrl isn't set, however, we can't force an upgrade.
+            // execHTTPcheck returns false when the manifest is malformed or when the version isn't
+            // an upgrade. If _firmwareUrl isn't set we can't force an upgrade.
             log_e("forceUpdate called, but unable to get _firmwareUrl from manifest via execHTTPcheck.");
             return;
         }
@@ -664,20 +731,23 @@ void esp32FOTA::forceUpdate(bool validate )
 /**
  * This function return the new version of new firmware
  */
-int esp32FOTA::getPayloadVersion(){
-    log_w( "int esp32FOTA::getPayloadVersion() only returns the major version from semantic version strings. Use void esp32FOTA::getPayloadVersion(char * version_string) instead!" );
+int esp32FOTA::getPayloadVersion()
+{
+    log_w( "This function only returns the MAJOR version. For complete depth use getPayloadVersion(char *)." );
     return _payloadVersion.major;
 }
 
 
-void esp32FOTA::getPayloadVersion(char * version_string){
-    semver_render(&_payloadVersion, version_string);
+void esp32FOTA::getPayloadVersion(char * version_string)
+{
+    semver_render( &_payloadVersion, version_string );
 }
 
 
-void esp32FOTA::debugSemVer( const char* label, semver_t* version ) {
+void esp32FOTA::debugSemVer( const char* label, semver_t* version )
+{
    char version_no[256] = {'\0'};
-   semver_render(version, version_no);
+   semver_render( version, version_no );
    log_i("%s: %s", label, version_no );
 }
 

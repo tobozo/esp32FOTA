@@ -62,7 +62,7 @@ extern "C" {
   #define FOTA_FS &SD_MMC
 #elif defined _LIFFLEFS_H_ // older externally linked, hard to identify and unsupported versions of SPIFFS
   #pragma message "this version of LittleFS is unsupported, use #include <LittleFS.h> instead, if using platformio add LittleFS(esp32)@^2.0.0 to lib_deps"
-#elif defined _PSRAMFS_H_
+#elif __has_include(<PSRamFS.h>) || defined _PSRAMFS_H_
   #pragma message "Using PSRamFS for certificate validation"
   #include <PSRamFS.h>
   #define FOTA_FS &PSRamFS
@@ -94,7 +94,7 @@ private:
   fs::FS* fs;
   std::string contents;
   size_t len;
-  bool fs_read_file(/* fs::FS* fs, const char* path, std::string *out */);
+  bool fs_read_file();
 };
 
 class CryptoMemAsset : public CryptoAsset
@@ -133,11 +133,33 @@ public:
   void getPayloadVersion(char * version_string);
   bool useDeviceID;
   String checkURL;
-  bool validate_sig( unsigned char *signature, uint32_t firmware_size );
+  bool validate_sig( const esp_partition_t* partition, unsigned char *signature, uint32_t firmware_size );
 
   // this is passed to Update.onProgress()
-  typedef std::function<void(size_t, size_t)> ProgressCallback_cb;
+  typedef std::function<void(size_t, size_t)> ProgressCallback_cb; // size_t progress, size_t size
   void setProgressCb(ProgressCallback_cb fn) { _ota_progress_callback = fn; }
+
+  // when Update.begin() returned false
+  typedef std::function<void(int)> UpdateBeginFail_cb; // int partition
+  void setUpdateBeginFailCb(UpdateBeginFail_cb fn) { onUpdateBeginFail = fn; }
+  UpdateBeginFail_cb onUpdateBeginFail;
+
+  // after Update.end() and before validate_sig()
+  typedef std::function<void(int)> UpdateEnd_cb; // int partition
+  void setUpdateEndCb(UpdateEnd_cb fn) { onUpdateEnd = fn; }
+  UpdateEnd_cb onUpdateEnd;
+
+  // validate_sig() error handling, mixed situations
+  typedef std::function<void(int,int)> UpdateCheckFail_cb; // int partition, int error_code
+  void setUpdateCheckFailCb(UpdateCheckFail_cb fn) { onUpdateCheckFail = fn; }
+  UpdateCheckFail_cb onUpdateCheckFail;
+
+  // update successful
+  typedef std::function<void(int,bool)> UpdateFinished_cb; // int partition, bool restart_after
+  void setUpdateFinishedCb(UpdateFinished_cb fn) { onUpdateFinished = fn; }
+  UpdateFinished_cb onUpdateFinished;
+  //onUpdateFinished( int partition, bool restart_after );
+
 
   // use this to set "Authorization: Basic" or other specific headers to be sent with the queries
   void setExtraHTTPHeader( String name, String value ) { extraHTTPHeaders[name] = value; }
@@ -153,6 +175,9 @@ private:
   bool _allow_insecure_https;
   bool checkJSONManifest(JsonVariant JSONDocument);
   void debugSemVer( const char* label, semver_t* version );
+
+  const esp_partition_t* _target_partition = nullptr;
+  void getPartition( int update_partition );
 
   fs::FS *_fs = FOTA_FS; // default filesystem for certificate validation
   // This is kept for legacy behaviour, use setPubKey() and setRootCA() with
