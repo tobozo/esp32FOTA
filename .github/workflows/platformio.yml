@@ -2,12 +2,19 @@ name: PlatformIO
 
 on:
   push:
-    branches:
-      - master
+    paths:
+    - '**.ino'
+    - '**.ini'
+    - '**.cpp'
+    - '**.hpp'
+    - '**.h'
+    - '**.c'
+    - '**platformio.yml'
 
   pull_request:
     branches:
       - master
+
   workflow_dispatch:
 
 jobs:
@@ -30,5 +37,7 @@ jobs:
           platformio update
       - name: Build test
         run: |
+          cp examples/HTTP/HTTP.ino tests/test_http/main.cpp
+          cp examples/HTTP/HTTPs.ino tests/test_https/main.cpp
           pio run
 

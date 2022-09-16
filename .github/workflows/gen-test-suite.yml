@@ -1,37 +1,69 @@
+# ************************ Dispatchable only workflow ************************
+# Copyleft (c+) tobozo <https://github.com/tobozo> 2022-09-15
+#
+# This workflow is for library maintainers willing to test their
+# changes on a private, local or public webserver.
+#
+# It can only be triggered manually from the actions tab.
+#
+# - Builds binaries from test suite folder (examples/anyFS/test)
+# - Fetches Root CA and populate spiffs/littlefs/progmem if applicable
+# - Creates a JSON Manifest linking to every binary in the test suite
+# - Bundles the compiled binaries and the manifest into a zip archive
+# - Publishes the zip archive as an artifact downloadable from the actions tab
+#
+#
+# Other publish methods can eventually be used at the maintainer's discretion.
+#
+# The commented blocks at the end of this workflow are only basic examples to
+# deploy the assets as gh-page, wiki or release.
+#
+
+
+
 name: Dispatchable build
+
 on:
   workflow_dispatch:
+
     inputs:
+
+      manifest_url:
+        description: '⚠️ Complete URL to JSON Manifest'
+        required: true
+        default: 'https://server/fota/fota.json'
+        type: string
+
+      manifest_host:
+        description: '⚠️ Hostname (e.g. github.com)'
+        required: true
+        default: 'server'
+        type: string
+
+      manifest_port:
+        description: '⚠️ Port (e.g 80 or 443)'
+        required: true
+        default: '443'
+        type: string
+
+      manifest_bin_path:
+        description: '⚠️ Path (no trailing slash)'
+        required: true
+        default: '/path/to/binaries'
+        type: string
+
       firmware_type:
         description: 'Firmware Type'
         default: 'esp32-fota-http'
         required: true
         type: string
-      manifest_url:
-        description: 'Complete URL (where the JSON Manifest will be hosted)'
-        required: true
-        default: 'https://github.com/[user]/[repo]/raw/[branch]/[path to manifest]/firmware.json'
-        type: string
-      manifest_host:
-        description: 'Hostname (where the binaries will be hosted)'
-        required: true
-        default: 'github.com'
-        type: string
-      manifest_port:
-        description: 'Port (e.g 80 or 443)'
-        required: true
-        default: '443'
-        type: string
-      manifest_bin_path:
-        description: 'Path (no trailing slash)'
-        required: true
-        default: '/[user]/[repo]/blob/[branch]/[path to binaries]'
-        type: string
+
       board_fqbn:
-        description: 'Board FQBN (for arduino-cli)'
+        description: 'Arduino FQBN'
         required: true
         default: 'esp32:esp32:esp32'
         type: string
+
       partition_scheme:
         description: 'Partition scheme'
         required: true
@@ -42,6 +74,7 @@ on:
         - large_spiffs
         default: 'default'
 
+
 jobs:
 
   matrix_build:
@@ -50,6 +83,7 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
+
       matrix:
 
         sketch:
@@ -57,7 +91,8 @@ jobs:
         - 2.cert-in-spiffs.ino
         - 3.cert-in-progmem.ino
         - 4.cert-in-littlefs.ino
-        - 5.final-stage.ino
+        # insert more tests here
+        - 99.final-stage.ino
 
     steps:
 
@@ -68,22 +103,24 @@ jobs:
 
       - name: Inject Manifest URL
         run: |
+          # The '#define FOTA_URL' declaration will override the default fota_url in the test suite code
           full_ino_path=`find /home/runner/work/ | grep "${{ matrix.sketch }}"`
           echo -e "#define FOTA_URL \"${{ inputs.manifest_url }}\"\n$(cat $full_ino_path)" > $full_ino_path
-
 
       - name: Inject TLS Cert if applicable
         if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
         run: |
+          # Find the root_ca.h file to overwrite
           full_rootca_path=`find /home/runner/work/ | grep "progmem/root_ca.h"`
           ssl_host="${{ inputs.manifest_host }}"
           prefix="const char* root_ca =\\"
           suffix="\"\";"
           echo $prefix > $full_rootca_path
+          # Retrieve certificate chain using openssl and split contents in "const char*" C/C++ declaration
           openssl s_client -showcerts -connect $ssl_host:${{ inputs.manifest_port }} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | awk '{print "\"" $0 "\\n\"\\"}' >> $full_rootca_path
+          # Overwrite root_ca.h file
           echo $suffix >> $full_rootca_path
           cat $full_rootca_path
-
 
       - name: ${{ matrix.sketch }}
         uses: ArminJo/arduino-test-compile@v3
@@ -103,7 +140,6 @@ jobs:
       - name: Save compiled binaries
         run: |
           mkdir -p /home/runner/builds
-          ls /home/runner/builds -la
           cd /home/runner/work/
           full_ino_bin_path=`find . | grep "build/${{ matrix.sketch }}.bin"`
           echo "Bin path: $full_ino_bin_path"
@@ -112,25 +148,27 @@ jobs:
       - name: Prepare data folder if applicable
         if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
         run: |
+          # Find the root_ca.pem file to overwrite
           full_rootca_path=`find /home/runner/work/ | grep "anyFS/data/root_ca.pem"`
           ssl_host="${{ inputs.manifest_host }}"
+          # Retrieve certificate chain using openssl and overwrite root_ca.pem file
           openssl s_client -showcerts -connect $ssl_host:${{ inputs.manifest_port }} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > $full_rootca_path
           cat $full_rootca_path
 
       - name: Create filesystem images
         run: |
-          # ooh that's dirty :-)
+          # Provide partition name=>size translation
           default_size=0x170000
           large_spiffs_size=0x6F0000
           min_spiffs_size=0x30000
-
+          # Find mkspiffs and mklittlefs binaries ... ooh that's dirty :-)
           mkspiffs_esp32=~/.arduino15/packages/esp32*/tools/mkspiffs/*/mkspiffs
           mklittlefs_esp32=~/.arduino15/packages/esp32*/tools/mklittlefs/*/mklittlefs
-          echo "mkspiffs path: $mkspiffs_esp32"
-          echo "mklittlefs path: $mklittlefs_esp32"
+          echo "[DEBUG] mkspiffs path: $mkspiffs_esp32"
+          echo "[DEBUG] mklittlefs path: $mklittlefs_esp32"
+          # Create the partition binaries
           $mkspiffs_esp32 -c examples/anyFS/data/ -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size /home/runner/builds/2.cert-in-spiffs.spiffs.bin
           $mklittlefs_esp32 -c examples/anyFS/data/ -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size /home/runner/builds/4.cert-in-littlefs.littlefs.bin
-          ls /home/runner/builds -la
 
       - name: Upload artifact for Stage ${{ matrix.test-stage }}
         uses: actions/upload-artifact@v2
@@ -141,26 +179,23 @@ jobs:
 
 
   post_build:
+
     name: Gather Artefacts
     runs-on: ubuntu-latest
     # wait until matrix jobs are all finished
     needs: matrix_build
+
     steps:
 
       - name: Checkout
         uses: actions/checkout@v2
-
-      - name: Create artifacts dir
-        run: mkdir -p /home/runner/builds
-
-      #- name: Download artifacts
-        #uses: actions/download-artifact@v2
-        #with:
-          #path: /home/runner/builds
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Polulate JSON Manifest
         run: |
           firmware_json_path=/home/runner/builds/firmware.json
+          mkdir -p /home/runner/builds
           cp .github/templates/firmware.test-suite.json $firmware_json_path
           sed -i -e 's/FIRMWARE_TYPE/${{ inputs.firmware_type }}/g' $firmware_json_path
           sed -i -e 's/FIRMWARE_HOST/${{ inputs.manifest_host }}/g' $firmware_json_path
@@ -176,11 +211,30 @@ jobs:
             /home/runner/builds/**
 
 
-      - name: Release check
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            /home/runner/builds/**
+      # Eventually enable one of those
 
+      #- name: Deploy 🚀 artifacts as gh-pages
+        #uses: JamesIves/github-pages-deploy-action@v4
+        #with:
+          #branch: gh-pages # The branch the action should deploy to.
+          #folder: /home/runner/builds/ # The folder the action should deploy.
+
+
+      # /!\ This one requires a personal access token
+      #- name: Deploy 🚀 artifacts as Wiki assets
+        #uses: SwiftDocOrg/github-wiki-publish-action@v1
+        #with:
+          #path: |
+            #/home/runner/builds/**
+        #env:
+          #GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+
+
+      # /!\ This one may require some tuning
+      #- name: Deploy 🚀 artifacts as Release
+        #uses: softprops/action-gh-release@v1
+        #if: startsWith(github.ref, 'refs/tags/')
+        #with:
+          #files: |
+            #/home/runner/builds/**
 

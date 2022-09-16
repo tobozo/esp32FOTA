@@ -33,6 +33,6 @@
     "version": 5,
     "host": "FIRMWARE_HOST",
     "port": FIRMWARE_PORT,
-    "bin": "FIRMWARE_PATH/5.final-stage.ino.bin?raw=true"
+    "bin": "FIRMWARE_PATH/99.final-stage.ino.bin?raw=true"
 }]
 
