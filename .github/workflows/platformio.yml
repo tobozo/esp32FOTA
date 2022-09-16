@@ -37,6 +37,8 @@ jobs:
           platformio update
       - name: Build test
         run: |
+          pwd
+          ls
           mkdir -p tests/test_http
           mkdir -p tests/test_https
           cp examples/HTTP/HTTP.ino tests/test_http/main.cpp
