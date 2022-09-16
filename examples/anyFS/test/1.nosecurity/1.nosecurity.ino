@@ -16,10 +16,8 @@
 
 // esp32fota settings
 const int firmware_version  = 1;
-#if defined FOTA_URL
-  const char* fota_url        = FOTA_URL;
-#else
-  const char* fota_url        = "https://github.com/chrisjoyce911/esp32FOTA/raw/tests/examples/anyFS/test/stage1/firmware.json";
+#if !defined FOTA_URL
+  #define FOTA_URL "http://server/fota/fota.json"
 #endif
 const char* firmware_name   = "esp32-fota-http";
 const bool check_signature  = false;
@@ -48,8 +46,7 @@ esp32FOTA esp32FOTA( String(firmware_name), firmware_version, check_signature, d
 void setup_wifi()
 {
   delay(10);
-  //Serial.print("Connecting to WiFi ");
-  //Serial.println( ssid );
+
   Serial.print("MAC Address ");
   Serial.println( WiFi.macAddress() );
 
@@ -72,7 +69,7 @@ void setup()
   Serial.begin(115200);
   Serial.printf( fota_debug_fmt, firmware_version, description, firmware_name, firmware_version, check_signature?"Enabled":"Disabled", disable_security?"Disabled":"Enabled" );
 
-  esp32FOTA.checkURL = fota_url;
+  esp32FOTA.checkURL = FOTA_URL;
 
   setup_wifi();
 }

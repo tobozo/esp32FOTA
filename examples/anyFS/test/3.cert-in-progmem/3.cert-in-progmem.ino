@@ -13,10 +13,8 @@
 
 // esp32fota settings
 const int firmware_version  = 3;
-#if defined FOTA_URL
-  const char* fota_url        = FOTA_URL;
-#else
-  const char* fota_url        = "https://github.com/chrisjoyce911/esp32FOTA/raw/tests/examples/anyFS/test/stage1/firmware.json";
+#if !defined FOTA_URL
+  #define FOTA_URL "http://server/fota/fota.json"
 #endif
 const char* firmware_name   = "esp32-fota-http";
 const bool check_signature  = false;
@@ -42,14 +40,13 @@ const char* fota_debug_fmt = R"DBG_FMT(
 esp32FOTA esp32FOTA( String(firmware_name), firmware_version, check_signature, disable_security );
 
 // create an abstraction of the root_ca file
-CryptoMemAsset *GithubRootCA = new CryptoMemAsset("Root CA", /*github_*/root_ca, strlen(/*github_*/root_ca)+1 );
+CryptoMemAsset *MyRootCA = new CryptoMemAsset("Root CA", root_ca, strlen(root_ca)+1 );
 
 void setup_wifi()
 {
   delay(10);
   Serial.print("Connecting to WiFi ");
   Serial.println( WiFi.macAddress() );
-  //Serial.println(ssid);
 
   WiFi.begin(); // no WiFi creds in this demo :-)
 
@@ -62,7 +59,7 @@ void setup_wifi()
   Serial.println("");
   Serial.println(WiFi.localIP());
 
-  esp32FOTA.setRootCA( GithubRootCA );
+  esp32FOTA.setRootCA( MyRootCA );
 
 }
 
@@ -72,7 +69,7 @@ void setup()
   Serial.begin(115200);
   Serial.printf( fota_debug_fmt, firmware_version, description, firmware_name, firmware_version, check_signature?"Enabled":"Disabled", disable_security?"Disabled":"Enabled" );
 
-  esp32FOTA.checkURL = fota_url;
+  esp32FOTA.checkURL = FOTA_URL;
 
   setup_wifi();
 }

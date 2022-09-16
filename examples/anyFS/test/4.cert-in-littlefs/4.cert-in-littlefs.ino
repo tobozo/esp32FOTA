@@ -11,10 +11,8 @@
 
 // esp32fota settings
 const int firmware_version  = 4;
-#if defined FOTA_URL
-  const char* fota_url        = FOTA_URL;
-#else
-  const char* fota_url        = "https://github.com/chrisjoyce911/esp32FOTA/raw/tests/examples/anyFS/test/stage1/firmware.json";
+#if !defined FOTA_URL
+  #define FOTA_URL "http://server/fota/fota.json"
 #endif
 const char* firmware_name   = "esp32-fota-http";
 const bool check_signature  = false;
@@ -40,7 +38,7 @@ const char* fota_debug_fmt = R"DBG_FMT(
 esp32FOTA esp32FOTA( String(firmware_name), firmware_version, check_signature, disable_security );
 
 // create an abstraction of the root_ca file
-CryptoFileAsset *GithubRootCA = new CryptoFileAsset( "/root_ca.pem", &LittleFS );
+CryptoFileAsset *MyRootCA = new CryptoFileAsset( "/root_ca.pem", &LittleFS );
 
 void setup_wifi()
 {
@@ -72,8 +70,8 @@ void setup()
     while(1) vTaskDelay(1);
   }
 
-  esp32FOTA.checkURL = fota_url;
-  esp32FOTA.setRootCA( GithubRootCA );
+  esp32FOTA.checkURL = FOTA_URL;
+  esp32FOTA.setRootCA( MyRootCA );
 
   setup_wifi();
 

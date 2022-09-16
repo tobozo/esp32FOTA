@@ -26,10 +26,12 @@
 #include <esp32fota.h> // fota pulls WiFi library
 
 CryptoFileAsset *MyRootCA = new CryptoFileAsset( "/root_ca.pem", &LittleFS );
+// CryptoFileAsset *MyRootCA = new CryptoFileAsset( "/root_ca.pem", &SPIFFS );
+// CryptoMemAsset *MyRootCA = new CryptoMemAsset("Certificates Chain", root_ca,     strlen(root_ca)+1 );
 
-//CryptoMemAsset *MyRSAKey = new CryptoMemAsset("RSA Public Key",     rsa_key_pub, strlen(rsa_key_pub)+1 );
-//CryptoMemAsset *MyRootCA = new CryptoMemAsset("Certificates Chain", root_ca,     strlen(root_ca)+1 );
-
+// CryptoFileAsset *MyRSAKey = new CryptoFileAsset( "/rsa_key.pub", &SPIFFS );
+// CryptoFileAsset *MyRSAKey = new CryptoFileAsset( "/rsa_key.pub", &LittleFS );
+// CryptoMemAsset *MyRSAKey = new CryptoMemAsset("RSA Public Key",     rsa_key_pub, strlen(rsa_key_pub)+1 );
 
 // Change to your WiFi credentials
 const char *ssid = "";
@@ -43,9 +45,8 @@ void setup_wifi()
   delay(10);
   Serial.print("Connecting to WiFi ");
   Serial.println( WiFi.macAddress() );
-  //Serial.println(ssid);
 
-  WiFi.begin(/*ssid, password*/);
+  WiFi.begin(); // no WiFi creds in this demo :-)
 
   while (WiFi.status() != WL_CONNECTED)
   {
@@ -55,8 +56,6 @@ void setup_wifi()
 
   Serial.println("");
   Serial.println(WiFi.localIP());
-
-  esp32FOTA.setRootCA( MyRootCA );
 
 }
 
@@ -73,7 +72,17 @@ void setup()
   // esp32FOTA.setCertFileSystem( &SD );
 
   esp32FOTA.checkURL = "http://server/fota/fota.json";
+  esp32FOTA.setRootCA( MyRootCA );
+  //esp32FOTA.setPubKey( MyRSAKey );
 
+  // show progress when an update occurs (e.g. on a TFT display)
+  esp32FOTA.setProgressCb( [](size_t progress, size_t size) {
+      if( progress == size || progress == 0 ) Serial.println();
+      Serial.print(".");
+  });
+
+  // add some custom headers to the http queries
+  esp32FOTA.setExtraHTTPHeader("Authorization", "Basic <credentials>");
 
   setup_wifi();
 }
