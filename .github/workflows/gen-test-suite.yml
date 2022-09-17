@@ -95,12 +95,10 @@ jobs:
     outputs:
       env: ${{ steps.set-env.outputs.env }}
     steps:
-      # Important: Do not forget the id!
+      # Avoid multiline: flatten JSON
       - id: set-env
-        #run: echo "::set-output name=matrix::$MATRIX"
         run: |
           content='${{ toJson(env) }}'
-          # avoid multiline, flatten JSON
           content="${content//'%'/'%25'}"
           content="${content//$'\n'/'%0A'}"
           content="${content//$'\r'/'%0D'}"
@@ -116,17 +114,11 @@ jobs:
 
     steps:
 
-    #- name: Checkout repository
-      #uses: actions/checkout@v2
-      #with:
-        #ref: ${{ github.event.pull_request.head.sha }}
-
     - name: Generate rsa key and fetch certificate
       run: |
 
         pub_key_path=${{env.cert_path}}/rsa_key.pub
         root_ca_path=${{env.cert_path}}/root_ca.pem
-
         root_ca_h_path=${{env.cert_path}}/root_ca.h
         pub_key_h_path=${{env.cert_path}}/rsa_key.h
 
@@ -178,26 +170,7 @@ jobs:
         # insert more tests here
         - 99.final-stage.ino
 
-    # that's wild ... probably won't work
-
-
     steps:
-
-      - name: Matrix env debug
-        run: |
-          echo "cert_path: ${{ env.cert_path }}"
-          echo "work_path: ${{ env.work_path }}"
-          echo "test_path: ${{ env.test_path }}"
-          echo "data_path: ${{ env.data_path }}"
-          echo "artifact_path: ${{ env.artifact_path }}"
-          echo "mkspiffs_esp32: ${{ env.mkspiffs_esp32 }}"
-          echo "mklittlefs_esp32: ${{ env.mklittlefs_esp32 }}"
-          echo "privkey_path: ${{ env.privkey_path }}"
-          echo "spiffs_bin_path: ${{ env.spiffs_bin_path }}"
-          echo "littlefs_bin_path: ${{ env.littlefs_bin_path }}"
-          echo "spiffs_signed_bin_path: ${{ env.spiffs_signed_bin_path }}"
-          echo "littlefs_signed_bin_path: ${{ env.littlefs_signed_bin_path }}"
-          echo "firmware_json_path: ${{ env.firmware_json_path }}"
 
       - name: Checkout
         uses: actions/checkout@v2
@@ -210,9 +183,9 @@ jobs:
           name: Certs
           path: ${{env.cert_path}}
 
+      # The '#define FOTA_URL' declaration will override the default fota_url in the test suite code
       - name: Inject Manifest URL
         run: |
-          # The '#define FOTA_URL' declaration will override the default fota_url in the test suite code
           full_ino_path=`find ${{env.work_path}}/ | grep "${{ matrix.sketch }}"`
           echo -e "#define FOTA_URL \"${{ inputs.manifest_url }}\"\n$(cat $full_ino_path)" > $full_ino_path
 
@@ -224,7 +197,7 @@ jobs:
           pub_key_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/pub_key.h
           cp ${{env.cert_path}}/root_ca.h $pub_key_path
 
-      - name: ${{ matrix.sketch }}
+      - name: Compile ${{ matrix.sketch }}
         uses: ArminJo/arduino-test-compile@v3
         with:
           platform-url: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_dev_index.json
@@ -235,7 +208,7 @@ jobs:
           sketch-names: ${{ matrix.sketch }}
           set-build-path: true
 
-      - name: Sign and Save compiled binaries
+      - name: Sign and Save compiled binary
         run: |
           mkdir -p ${{env.artifact_path}}
           full_ino_bin_path=`find ${{env.work_path}}/ | grep "build/${{ matrix.sketch }}.bin"`
@@ -244,32 +217,23 @@ jobs:
           cp $full_ino_bin_path ${{env.artifact_path}}/${{ matrix.sketch }}.bin
           cp $full_ino_bin_path.img ${{env.artifact_path}}/${{ matrix.sketch }}.signed.bin
 
-      - name: Prepare data folder if applicable
+      - name: Prepare data folder
         if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
         run: |
           root_ca_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/root_ca.pem
           pub_key_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/rsa_key.pub
-
           cp /home/runner/certs/root_ca.pem $root_ca_path
           cp /home/runner/certs/rsa_key.pub $pub_key_path
           cp /home/runner/certs/root_ca.pem examples/anyFS/data/
           cp /home/runner/certs/rsa_key.pub examples/anyFS/data/
 
-      - name: Create filesystem images
+      - name: Create and sign filesystem images
         run: |
           # Provide partition name=>size translation
           default_size=0x170000
           large_spiffs_size=0x6F0000
           min_spiffs_size=0x30000
-          # Find mkspiffs and mklittlefs binaries ... ooh that's dirty :-)
-          #mkspiffs_esp32=~/.arduino15/packages/esp32*/tools/mkspiffs/*/mkspiffs
-          #mklittlefs_esp32=~/.arduino15/packages/esp32*/tools/mklittlefs/*/mklittlefs
 
-          #data_path=examples/anyFS/data/
-          #spiffs_bin_path=/home/runner/builds/2.cert-in-spiffs.spiffs.bin
-          #littlefs_bin_path=/home/runner/builds/4.cert-in-littlefs.littlefs.bin
-          #spiffs_signed_bin_path=/home/runner/builds/99.final-stage.spiffs.signed.bin
-          #littlefs_signed_bin_path=/home/runner/builds/99.final-stage.littlefs.signed.bin
           echo "[DEBUG] mkspiffs: ${{env.mkspiffs_esp32}} / ${{env.spiffs_bin_path}} / ${{env.spiffs_signed_bin_path}}"
           echo "[DEBUG] mklittlefs: ${{env.mklittlefs_esp32}} / ${{env.mklittlefs_bin_path}} / ${{env.mklittlefs_signed_bin_path}}"
 
@@ -293,6 +257,13 @@ jobs:
           path: |
             ${{env.artifact_path}}/**
 
+      - name: Update Certs artifact (after privkey deletion)
+        uses: actions/upload-artifact@v2
+        with:
+          name: Certs
+          path: |
+            ${{env.cert_path}}/**
+
 
   post_build:
 
@@ -311,7 +282,6 @@ jobs:
 
       - name: Polulate JSON Manifest
         run: |
-          # firmware_json_path=/home/runner/builds/firmware.json
           mkdir -p ${{env.artifact_path}}
           cp .github/templates/firmware.test-suite.json ${{env.firmware_json_path}}
           sed -i -e 's/FIRMWARE_TYPE/${{ inputs.firmware_type }}/g' ${{env.firmware_json_path}}
@@ -326,7 +296,6 @@ jobs:
           name: TestSuite
           path: |
             ${{env.artifact_path}}/**
-
 
       # Eventually enable one of those
 
