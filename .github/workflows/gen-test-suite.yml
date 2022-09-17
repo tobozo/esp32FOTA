@@ -98,7 +98,7 @@ jobs:
       # Important: Do not forget the id!
       - id: set-env
         #run: echo "::set-output name=matrix::$MATRIX"
-        run: echo "::set-output name=env::${{ toJson(env) }}"
+        run: echo "::set-output name=env::'${{ toJson(env) }}'"
 
 
   gen_keys:
