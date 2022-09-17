@@ -178,7 +178,7 @@ jobs:
 
       - name: Matrix env debug
         run: |
-          echo "Json: ${{fromJSON(needs.set_env.outputs.env)}}"
+          # echo "Json: ${{fromJSON(needs.set_env.outputs.env)}}"
           echo "cert_path: ${{ env.cert_path }}"
           echo "work_path: ${{ env.work_path }}"
           echo "test_path: ${{ env.test_path }}"
