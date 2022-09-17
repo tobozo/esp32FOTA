@@ -95,14 +95,14 @@ jobs:
     outputs:
       env: ${{steps.set-env.outputs.env}}
     steps:
-      # Avoid multiline: flatten JSON
-      - id: set-env
-        run: |
-          content='${{ toJson(env) }}'
-          content="${content//'%'/'%25'}"
-          content="${content//$'\n'/'%0A'}"
-          content="${content//$'\r'/'%0D'}"
-          echo "::set-output name=env::$content"
+    # Avoid multiline: flatten JSON
+    - id: set-env
+      run: |
+        content='${{ toJson(env) }}'
+        content="${content//'%'/'%25'}"
+        content="${content//$'\n'/'%0A'}"
+        content="${content//$'\r'/'%0D'}"
+        echo "::set-output name=env::$content"
 
 
   gen_keys:
@@ -299,28 +299,29 @@ jobs:
 
     # Eventually enable one of those
 
-    #- name: Deploy 🚀 artifacts as gh-pages
-      #uses: JamesIves/github-pages-deploy-action@v4
-      #with:
-        #branch: gh-pages # The branch the action should deploy to.
-        #folder: ${{env.artifact_path}}/ # The folder the action should deploy.
+#
+#    - name: Deploy 🚀 artifacts as gh-pages
+#      uses: JamesIves/github-pages-deploy-action@v4
+#      with:
+#        branch: gh-pages # The branch the action should deploy to.
+#        folder: ${{env.artifact_path}}/ # The folder the action should deploy.
 
 
-    # /!\ This one requires a personal access token
-    #- name: Deploy 🚀 artifacts as Wiki assets
-      #uses: SwiftDocOrg/github-wiki-publish-action@v1
-      #with:
-        #path: |
-          #${{env.artifact_path}}/**
-      #env:
-        #GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+#    /!\ This one requires a personal access token
+#    - name: Deploy 🚀 artifacts as Wiki assets
+#      uses: SwiftDocOrg/github-wiki-publish-action@v1
+#      with:
+#        path: |
+#          ${{env.artifact_path}}/**
+#      env:
+#        GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
 
 
-    # /!\ This one may require some tuning
-    #- name: Deploy 🚀 artifacts as Release
-      #uses: softprops/action-gh-release@v1
-      #if: startsWith(github.ref, 'refs/tags/')
-      #with:
-        #files: |
-          #${{env.artifact_path}}/**
+#    /!\ This one may require some tuning
+#    - name: Deploy 🚀 artifacts as Release
+#      uses: softprops/action-gh-release@v1
+#      if: startsWith(github.ref, 'refs/tags/')
+#      with:
+#        files: |
+#          ${{env.artifact_path}}/**
 
