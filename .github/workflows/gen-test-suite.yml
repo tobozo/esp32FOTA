@@ -175,7 +175,7 @@ jobs:
           root_ca_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/root_ca.h
           cat /home/runner/certs/root_ca.h > $root_ca_path
           pub_key_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/pub_key.h
-          cat /home/runner/certs/root_ca.h > $pub_key
+          cat /home/runner/certs/root_ca.h > $pub_key_path
 
       - name: ${{ matrix.sketch }}
         uses: ArminJo/arduino-test-compile@v3
