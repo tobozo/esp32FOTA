@@ -100,6 +100,7 @@ jobs:
         #run: echo "::set-output name=matrix::$MATRIX"
         run: |
           content='${{ toJson(env) }}'
+          # avoid multiline, flatten JSON
           content="${content//'%'/'%25'}"
           content="${content//$'\n'/'%0A'}"
           content="${content//$'\r'/'%0D'}"
@@ -161,7 +162,7 @@ jobs:
 
     name: ${{ matrix.sketch }}
     runs-on: ubuntu-latest
-    needs: set_env
+    needs: [gen_keys,set_env]
 
     strategy:
 
