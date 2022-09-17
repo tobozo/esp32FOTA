@@ -73,12 +73,10 @@ on:
 
 jobs:
 
-  gen_keys:
+  set_env:
 
-    name: "Openssl: generate rsa key and fetch certificate"
+    name: "Set environment"
     runs-on: ubuntu-latest
-
-
     env:
       cert_path: /home/runner/certs
       work_path: /home/runner/work
@@ -93,6 +91,20 @@ jobs:
       spiffs_signed_bin_path: /home/runner/builds/99.final-stage.spiffs.signed.bin
       littlefs_signed_bin_path: /home/runner/builds/99.final-stage.littlefs.signed.bin
       firmware_json_path: /home/runner/builds/firmware.json
+
+    outputs:
+      env: ${{ steps.set-env.outputs.env }}
+    steps:
+      # Important: Do not forget the id!
+      - id: set-env
+        #run: echo "::set-output name=matrix::$MATRIX"
+        run: echo "::set-output name=env::${{ toJson(env) }}"
+
+
+  gen_keys:
+
+    name: "Openssl: generate rsa key and fetch certificate"
+    runs-on: ubuntu-latest
 
     steps:
 
@@ -159,13 +171,13 @@ jobs:
         - 99.final-stage.ino
 
     # that's wild ... probably won't work
-    env: ${{needs.gen_keys.env}}
+    # env: ${{fromJSON(needs.gen_keys.outputs.env)}}
 
     steps:
 
       - name: Matrix env debug
         run: |
-          echo "Json: ${{fromJSON(needs.gen_keys.env)}}"
+          echo "Json: ${{fromJSON(needs.gen_keys.outputs.env)}}"
           echo "cert_path: ${{ env.cert_path }}"
           echo "work_path: ${{ env.work_path }}"
           echo "test_path: ${{ env.test_path }}"
