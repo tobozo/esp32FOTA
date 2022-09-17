@@ -75,7 +75,7 @@ jobs:
 
   gen_keys:
 
-    name: Openssl: generate rsa key and fetch certificate
+    name: "Openssl: generate rsa key and fetch certificate"
     runs-on: ubuntu-latest
 
     steps:
