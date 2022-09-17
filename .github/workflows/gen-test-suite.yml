@@ -6,20 +6,16 @@
 #
 # It can only be triggered manually from the actions tab.
 #
-# - Builds binaries from test suite folder (examples/anyFS/test)
-# - Fetches Root CA and populate spiffs/littlefs/progmem if applicable
+# - Gen RSA && Fetches Root CA then populate spiffs/littlefs/progmem if applicable
+# - Builds binaries (+signed version when applicable) from test suite folder (examples/anyFS/test)
 # - Creates a JSON Manifest linking to every binary in the test suite
 # - Bundles the compiled binaries and the manifest into a zip archive
 # - Publishes the zip archive as an artifact downloadable from the actions tab
 #
-#
-# Other publish methods can eventually be used at the maintainer's discretion.
-#
-# The commented blocks at the end of this workflow are only basic examples to
+# A final publish method can eventually be used at the maintainer's discretion.
+# See the commented blocks at the end of this workflow, and uncomment/edit to
 # deploy the assets as gh-page, wiki or release.
 #
-
-
 
 name: Dispatchable build
 
@@ -77,10 +73,61 @@ on:
 
 jobs:
 
+  gen_keys:
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+    - name: Generate openssl stuff
+      run: |
+        artifact_path=/home/runner/certs/
+        privkey_path=$artifact_path/priv_key.pem
+        pub_key_path=$artifact_path/rsa_key.pub
+        root_ca_path=$artifact_path/root_ca.pem
+
+        root_ca_h_path=$artifact_path/root_ca.h
+        pub_key_h_path=$artifact_path/rsa_key.h
+
+        mkdir -p $artifact_path
+
+        ssl_host="${{ inputs.manifest_host }}"
+        root_ca_c_prefix="const char* root_ca =\\"
+        pub_key_c_prefix="const char* pub_key =\\"
+        c_suffix="\"\";"
+
+        # Retrieve a copy of a certificate chain using openssl and split contents in "const char*" C/C++ declaration
+        openssl s_client -showcerts -connect $ssl_host:${{ inputs.manifest_port }} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > $root_ca_path
+        echo $root_ca_c_prefix > $root_ca_h_path
+        cat $root_ca_path | awk '{print "\"" $0 "\\n\"\\"}' >> $root_ca_h_path
+        echo $c_suffix >> $root_ca_h_path
+
+        # Generate privkey for later signing and split contents in "const char*" C/C++ declaration
+        openssl genrsa -out $privkey_path 4096
+        openssl rsa -in $privkey_path -pubout > $pub_key_path
+        echo $pub_key_c_prefix > $pub_key_h_path
+        cat $pub_key_path | awk '{print "\"" $0 "\\n\"\\"}' > $pub_key_h_path
+        echo $c_suffix >> $pub_key_h_path
+
+        echo "Generated files:"
+        cat $pub_key_path
+        cat $pub_key_h_path
+        cat $root_ca_path
+        cat $root_ca_h_path
+
+
+    - name: Upload RootCA/PubKey as artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: Certs
+        path: |
+          /home/runner/certs/**
+
+
   matrix_build:
 
     name: ${{ matrix.sketch }}
     runs-on: ubuntu-latest
+    needs: gen_keys
 
     strategy:
 
@@ -91,6 +138,7 @@ jobs:
         - 2.cert-in-spiffs.ino
         - 3.cert-in-progmem.ino
         - 4.cert-in-littlefs.ino
+        - 5.sig-in-progmem.ino
         # insert more tests here
         - 99.final-stage.ino
 
@@ -101,26 +149,24 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Retrieve RootCA/PubKey
+        uses: actions/download-artifact@v3
+        with:
+          name: Certs
+
       - name: Inject Manifest URL
         run: |
           # The '#define FOTA_URL' declaration will override the default fota_url in the test suite code
           full_ino_path=`find /home/runner/work/ | grep "${{ matrix.sketch }}"`
           echo -e "#define FOTA_URL \"${{ inputs.manifest_url }}\"\n$(cat $full_ino_path)" > $full_ino_path
 
-      - name: Inject TLS Cert if applicable
+      - name: Inject RootCA/PubKey if applicable
         if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
         run: |
-          # Find the root_ca.h file to overwrite
-          full_rootca_path=`find /home/runner/work/ | grep "progmem/root_ca.h"`
-          ssl_host="${{ inputs.manifest_host }}"
-          prefix="const char* root_ca =\\"
-          suffix="\"\";"
-          echo $prefix > $full_rootca_path
-          # Retrieve certificate chain using openssl and split contents in "const char*" C/C++ declaration
-          openssl s_client -showcerts -connect $ssl_host:${{ inputs.manifest_port }} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | awk '{print "\"" $0 "\\n\"\\"}' >> $full_rootca_path
-          # Overwrite root_ca.h file
-          echo $suffix >> $full_rootca_path
-          cat $full_rootca_path
+          root_ca_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/root_ca.h
+          cat /home/runner/certs/root_ca.h > $root_ca_path
+          pub_key_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/pub_key.h
+          cat /home/runner/certs/root_ca.h > $pub_key
 
       - name: ${{ matrix.sketch }}
         uses: ArminJo/arduino-test-compile@v3
@@ -137,23 +183,29 @@ jobs:
           # extra-arduino-cli-args: ${{ matrix.extra-arduino-cli-args }}
           # debug-install: true
 
-      - name: Save compiled binaries
+      - name: Sign and Save compiled binaries
         run: |
           mkdir -p /home/runner/builds
           cd /home/runner/work/
           full_ino_bin_path=`find . | grep "build/${{ matrix.sketch }}.bin"`
           echo "Bin path: $full_ino_bin_path"
+
+          openssl dgst -sign /home/runner/certs/priv_key.pem -keyform PEM -sha256 -out firmware.sign -binary $full_ino_bin_path
+          cat firmware.sign firmware.bin > $full_ino_bin_path.img
+
           cp "$full_ino_bin_path" /home/runner/builds/${{ matrix.sketch }}.bin
+          cp "$full_ino_bin_path.img" /home/runner/builds/${{ matrix.sketch }}.signed.bin
 
       - name: Prepare data folder if applicable
         if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
         run: |
-          # Find the root_ca.pem file to overwrite
-          full_rootca_path=`find /home/runner/work/ | grep "anyFS/data/root_ca.pem"`
-          ssl_host="${{ inputs.manifest_host }}"
-          # Retrieve certificate chain using openssl and overwrite root_ca.pem file
-          openssl s_client -showcerts -connect $ssl_host:${{ inputs.manifest_port }} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > $full_rootca_path
-          cat $full_rootca_path
+          root_ca_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/root_ca.pem
+          pub_key_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/rsa_key.pub
+
+          cp /home/runner/certs/root_ca.pem $root_ca_path
+          cp /home/runner/certs/rsa_key.pub $pub_key_path
+          cp /home/runner/certs/root_ca.pem anyFS/data/
+          cp /home/runner/certs/rsa_key.pub anyFS/data/
 
       - name: Create filesystem images
         run: |
