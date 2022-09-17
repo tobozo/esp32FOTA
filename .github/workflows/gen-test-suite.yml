@@ -98,7 +98,12 @@ jobs:
       # Important: Do not forget the id!
       - id: set-env
         #run: echo "::set-output name=matrix::$MATRIX"
-        run: echo "::set-output name=env::'${{ toJson(env) }}'"
+        run: |
+          content='${{ toJson(env) }}'
+          content="${content//'%'/'%25'}"
+          content="${content//$'\n'/'%0A'}"
+          content="${content//$'\r'/'%0D'}"
+          echo "::set-output name=env::$content"
 
 
   gen_keys:
@@ -156,7 +161,7 @@ jobs:
 
     name: ${{ matrix.sketch }}
     runs-on: ubuntu-latest
-    needs: gen_keys
+    needs: set_env
 
     strategy:
 
