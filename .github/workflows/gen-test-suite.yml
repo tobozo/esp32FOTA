@@ -162,6 +162,7 @@ jobs:
 
       - name: Inject Manifest URL
         run: |
+          ls /home/runner/certs/* -la
           # The '#define FOTA_URL' declaration will override the default fota_url in the test suite code
           full_ino_path=`find /home/runner/work/ | grep "${{ matrix.sketch }}"`
           echo -e "#define FOTA_URL \"${{ inputs.manifest_url }}\"\n$(cat $full_ino_path)" > $full_ino_path
