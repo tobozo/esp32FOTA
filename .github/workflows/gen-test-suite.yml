@@ -74,6 +74,10 @@ on:
 jobs:
 
   gen_keys:
+
+    name: Openssl stuff
+    runs-on: ubuntu-latest
+
     steps:
 
     - name: Checkout
