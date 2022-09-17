@@ -112,6 +112,7 @@ jobs:
     name: "Openssl: generate rsa key and fetch certificate"
     runs-on: ubuntu-latest
     needs: set_env
+    env: ${{fromJSON(needs.set_env.outputs.env)}}
 
     steps:
 
@@ -163,6 +164,7 @@ jobs:
     name: ${{ matrix.sketch }}
     runs-on: ubuntu-latest
     needs: [gen_keys,set_env]
+    env: ${{fromJSON(needs.set_env.outputs.env)}}
 
     strategy:
 
@@ -178,7 +180,7 @@ jobs:
         - 99.final-stage.ino
 
     # that's wild ... probably won't work
-    env: ${{fromJSON(needs.set_env.outputs.env)}}
+
 
     steps:
 
