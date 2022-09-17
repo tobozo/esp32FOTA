@@ -93,7 +93,7 @@ jobs:
       firmware_json_path: /home/runner/builds/firmware.json
 
     outputs:
-      env: ${{ steps.set-env.outputs.env }}
+      env: ${{steps.set-env.outputs.env}}
     steps:
       # Avoid multiline: flatten JSON
       - id: set-env
@@ -124,13 +124,13 @@ jobs:
 
         mkdir -p ${{env.cert_path}}
 
-        ssl_host="${{ inputs.manifest_host }}"
+        ssl_host="${{inputs.manifest_host}}"
         root_ca_c_prefix="const char* root_ca =\\"
         pub_key_c_prefix="const char* pub_key =\\"
         c_suffix="\"\";"
 
         # Retrieve a copy of a certificate chain using openssl and split contents in "const char*" C/C++ declaration
-        openssl s_client -showcerts -connect $ssl_host:${{ inputs.manifest_port }} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > $root_ca_path
+        openssl s_client -showcerts -connect $ssl_host:${{inputs.manifest_port}} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > $root_ca_path
         echo $root_ca_c_prefix > $root_ca_h_path
         cat $root_ca_path | awk '{print "\"" $0 "\\n\"\\"}' >> $root_ca_h_path
         echo $c_suffix >> $root_ca_h_path
@@ -187,7 +187,7 @@ jobs:
       - name: Inject Manifest URL
         run: |
           full_ino_path=`find ${{env.work_path}}/ | grep "${{ matrix.sketch }}"`
-          echo -e "#define FOTA_URL \"${{ inputs.manifest_url }}\"\n$(cat $full_ino_path)" > $full_ino_path
+          echo -e "#define FOTA_URL \"${{inputs.manifest_url}}\"\n$(cat $full_ino_path)" > $full_ino_path
 
       - name: Inject RootCA/PubKey if applicable
         if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
@@ -201,7 +201,7 @@ jobs:
         uses: ArminJo/arduino-test-compile@v3
         with:
           platform-url: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_dev_index.json
-          arduino-board-fqbn: ${{ inputs.board_fqbn }}:PartitionScheme=${{inputs.partition_scheme}}
+          arduino-board-fqbn: ${{inputs.board_fqbn}}:PartitionScheme=${{inputs.partition_scheme}}
           required-libraries: ArduinoJson
           extra-arduino-lib-install-args: --no-deps
           extra-arduino-cli-args: "--warnings default " # see https://github.com/ArminJo/arduino-test-compile/issues/28
@@ -284,10 +284,10 @@ jobs:
         run: |
           mkdir -p ${{env.artifact_path}}
           cp .github/templates/firmware.test-suite.json ${{env.firmware_json_path}}
-          sed -i -e 's/FIRMWARE_TYPE/${{ inputs.firmware_type }}/g' ${{env.firmware_json_path}}
-          sed -i -e 's/FIRMWARE_HOST/${{ inputs.manifest_host }}/g' ${{env.firmware_json_path}}
-          sed -i -e 's/FIRMWARE_PORT/${{ inputs.manifest_port }}/g' ${{env.firmware_json_path}}
-          sed -i -e 's~FIRMWARE_PATH~${{ inputs.manifest_bin_path }}~g' ${{env.firmware_json_path}}
+          sed -i -e 's/FIRMWARE_TYPE/${{inputs.firmware_type}}/g' ${{env.firmware_json_path}}
+          sed -i -e 's/FIRMWARE_HOST/${{inputs.manifest_host}}/g' ${{env.firmware_json_path}}
+          sed -i -e 's/FIRMWARE_PORT/${{inputs.manifest_port}}/g' ${{env.firmware_json_path}}
+          sed -i -e 's~FIRMWARE_PATH~${{inputs.manifest_bin_path}}~g' ${{env.firmware_json_path}}
           cat ${{env.firmware_json_path}}
 
       - name: Update TestSuite artifacts with new JSON Manifest
