@@ -120,6 +120,8 @@ jobs:
         cat $root_ca_path
         cat $root_ca_h_path
 
+        ls /home/runner/certs/* -la
+
     - name: Upload RootCA/PubKey as artifact
       uses: actions/upload-artifact@v2
       with:
@@ -162,7 +164,6 @@ jobs:
 
       - name: Inject Manifest URL
         run: |
-          ls /home/runner/certs/* -la
           # The '#define FOTA_URL' declaration will override the default fota_url in the test suite code
           full_ino_path=`find /home/runner/work/ | grep "${{ matrix.sketch }}"`
           echo -e "#define FOTA_URL \"${{ inputs.manifest_url }}\"\n$(cat $full_ino_path)" > $full_ino_path
@@ -170,6 +171,7 @@ jobs:
       - name: Inject RootCA/PubKey if applicable
         if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
         run: |
+          ls /home/runner/certs/* -la
           root_ca_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/root_ca.h
           cat /home/runner/certs/root_ca.h > $root_ca_path
           pub_key_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/pub_key.h
