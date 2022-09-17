@@ -110,18 +110,34 @@ private:
 };
 
 
+struct FOTAConfig_t
+{
+  const char*  name { nullptr };
+  const char*  manifest_url { nullptr };
+  semver_t     version {};
+  bool         check_sig { false };
+  bool         unsafe { false };
+  bool         use_device_id { false };
+  CryptoAsset* root_ca { nullptr };
+  CryptoAsset* pub_key { nullptr };
+  FOTAConfig_t() = default;
+};
+
+
+
 // Main Class
 class esp32FOTA
 {
 public:
+
+  esp32FOTA();
+  esp32FOTA( FOTAConfig_t cfg );
   esp32FOTA(String firwmareType, int firwmareVersion,            bool validate = false, bool allow_insecure_https = false );
   esp32FOTA(String firwmareType, String firmwareSemanticVersion, bool validate = false, bool allow_insecure_https = false );
   ~esp32FOTA();
 
-  void setCertFileSystem( fs::FS *cert_filesystem = nullptr );
-
-  template <typename T> void setPubKey( T* asset ) { PubKey = (CryptoAsset*)asset; _check_sig = true; }
-  template <typename T> void setRootCA( T* asset ) { RootCA = (CryptoAsset*)asset; _allow_insecure_https = false; }
+  template <typename T> void setPubKey( T* asset ) { _cfg.pub_key = (CryptoAsset*)asset; _cfg.check_sig = true; }
+  template <typename T> void setRootCA( T* asset ) { _cfg.root_ca = (CryptoAsset*)asset; _cfg.unsafe = false; }
 
   void forceUpdate(String firmwareHost, uint16_t firmwarePort, String firmwarePath, bool validate );
   void forceUpdate(String firmwareURL, bool validate );
@@ -131,70 +147,76 @@ public:
   bool execHTTPcheck();
   int getPayloadVersion();
   void getPayloadVersion(char * version_string);
-  bool useDeviceID;
-  String checkURL;
+
+  void setManifestURL( String manifest_url ) { _cfg.manifest_url = manifest_url.c_str(); }
   bool validate_sig( const esp_partition_t* partition, unsigned char *signature, uint32_t firmware_size );
 
   // this is passed to Update.onProgress()
   typedef std::function<void(size_t, size_t)> ProgressCallback_cb; // size_t progress, size_t size
-  void setProgressCb(ProgressCallback_cb fn) { _ota_progress_callback = fn; }
+  void setProgressCb(ProgressCallback_cb fn) { onOTAProgress = fn; } // callback setter
 
   // when Update.begin() returned false
-  typedef std::function<void(int)> UpdateBeginFail_cb; // int partition
-  void setUpdateBeginFailCb(UpdateBeginFail_cb fn) { onUpdateBeginFail = fn; }
-  UpdateBeginFail_cb onUpdateBeginFail;
+  typedef std::function<void(int)> UpdateBeginFail_cb; // int partition (U_FLASH or U_SPIFFS)
+  void setUpdateBeginFailCb(UpdateBeginFail_cb fn) { onUpdateBeginFail = fn; } // callback setter
 
   // after Update.end() and before validate_sig()
-  typedef std::function<void(int)> UpdateEnd_cb; // int partition
-  void setUpdateEndCb(UpdateEnd_cb fn) { onUpdateEnd = fn; }
-  UpdateEnd_cb onUpdateEnd;
+  typedef std::function<void(int)> UpdateEnd_cb; // int partition (U_FLASH or U_SPIFFS)
+  void setUpdateEndCb(UpdateEnd_cb fn) { onUpdateEnd = fn; } // callback setter
 
   // validate_sig() error handling, mixed situations
-  typedef std::function<void(int,int)> UpdateCheckFail_cb; // int partition, int error_code
-  void setUpdateCheckFailCb(UpdateCheckFail_cb fn) { onUpdateCheckFail = fn; }
-  UpdateCheckFail_cb onUpdateCheckFail;
+  typedef std::function<void(int,int)> UpdateCheckFail_cb; // int partition (U_FLASH or U_SPIFFS), int error_code
+  void setUpdateCheckFailCb(UpdateCheckFail_cb fn) { onUpdateCheckFail = fn; } // callback setter
 
   // update successful
-  typedef std::function<void(int,bool)> UpdateFinished_cb; // int partition, bool restart_after
-  void setUpdateFinishedCb(UpdateFinished_cb fn) { onUpdateFinished = fn; }
-  UpdateFinished_cb onUpdateFinished;
-  //onUpdateFinished( int partition, bool restart_after );
-
+  typedef std::function<void(int,bool)> UpdateFinished_cb; // int partition (U_FLASH or U_SPIFFS), bool restart_after
+  void setUpdateFinishedCb(UpdateFinished_cb fn) { onUpdateFinished = fn; } // callback setter
 
   // use this to set "Authorization: Basic" or other specific headers to be sent with the queries
   void setExtraHTTPHeader( String name, String value ) { extraHTTPHeaders[name] = value; }
 
+  // /!\ Only use this to change filesystem for **default** RootCA and PubKey paths.
+  // Otherwise use setPubKey() and setRootCA()
+  void setCertFileSystem( fs::FS *cert_filesystem = nullptr );
+
+  // config getters and setters
+  FOTAConfig_t getConfig() { return _cfg; };
+  void setConfig( FOTAConfig_t cfg ) { _cfg = cfg; }
+
+  [[deprecated("Use setManifestURL( String ) or cfg.manifest_url with setConfig( FOTAConfig_t )")]] String checkURL;
+  [[deprecated("Use cfg.use_device_id with setConfig( FOTAConfig_t )")]] bool useDeviceID;
+
 private:
-  String getDeviceID();
-  String _firmwareType;
-  semver_t _firmwareVersion = semver_t();
+
+  FOTAConfig_t _cfg;
+
   semver_t _payloadVersion = semver_t();
   String _firmwareUrl;
   String _flashFileSystemUrl;
-  bool _check_sig;
-  bool _allow_insecure_https;
-  bool checkJSONManifest(JsonVariant JSONDocument);
-  void debugSemVer( const char* label, semver_t* version );
-
-  const esp_partition_t* _target_partition = nullptr;
-  void getPartition( int update_partition );
 
   fs::FS *_fs = FOTA_FS; // default filesystem for certificate validation
+
+  // custom callbacks provided by user
+  ProgressCallback_cb onOTAProgress; // this is passed to Update.onProgress()
+  UpdateBeginFail_cb  onUpdateBeginFail; // when Update.begin() returned false
+  UpdateEnd_cb        onUpdateEnd; // after Update.end() and before validate_sig()
+  UpdateCheckFail_cb  onUpdateCheckFail; // validate_sig() error handling, mixed situations
+  UpdateFinished_cb   onUpdateFinished; // update successful
+
+  std::map<String,String> extraHTTPHeaders; // this holds the extra http headers defined by the user
+
+  String getDeviceID();
+  bool checkJSONManifest(JsonVariant JSONDocument);
+  void debugSemVer( const char* label, semver_t* version );
+  void getPartition( int update_partition );
+
+  // temporary partition holder for signature check operations
+  const esp_partition_t* _target_partition = nullptr;
+
   // This is kept for legacy behaviour, use setPubKey() and setRootCA() with
   // CryptoMemAsset ot CryptoFileAsset instead
+  void setupCryptoAssets();
   const char* rsa_key_pub_default_path = "/rsa_key.pub";
   const char* root_ca_pem_default_path = "/root_ca.pem";
-
-  CryptoAsset *PubKey = nullptr;
-  CryptoAsset *RootCA = nullptr;
-
-  void setupCryptoAssets();
-
-  // custom progress callback provided by user
-  ProgressCallback_cb _ota_progress_callback;
-
-  // this holds the extra http headers defined by the user
-  std::map<String,String> extraHTTPHeaders;
 
 };
 

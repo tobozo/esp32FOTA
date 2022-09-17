@@ -39,6 +39,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 // Filesystem helper for signature check and pem validation
 // This is abstracted away to allow storage alternatives such
@@ -82,36 +83,45 @@ size_t CryptoFileAsset::size()
 
 
 
+esp32FOTA::esp32FOTA() { }
+
+esp32FOTA::esp32FOTA( FOTAConfig_t cfg )
+{
+  setConfig( cfg );
+}
+
+
 esp32FOTA::esp32FOTA(String firmwareType, int firmwareVersion, bool validate, bool allow_insecure_https)
 {
-    _firmwareType = firmwareType;
-    _firmwareVersion = semver_t{firmwareVersion};
-    _check_sig = validate;
-    _allow_insecure_https = allow_insecure_https;
-    useDeviceID = false;
+    _cfg.name      = firmwareType.c_str();
+    _cfg.version   = semver_t{firmwareVersion};
+    _cfg.check_sig = validate;
+    _cfg.unsafe    = allow_insecure_https;
+
     setupCryptoAssets();
-    debugSemVer("Current firmware version", &_firmwareVersion );
+    debugSemVer("Current firmware version", &_cfg.version );
 }
 
 
 esp32FOTA::esp32FOTA(String firmwareType, String firmwareSemanticVersion, bool validate, bool allow_insecure_https)
 {
-    if (semver_parse(firmwareSemanticVersion.c_str(), &_firmwareVersion)) {
+    _cfg.name      = firmwareType.c_str();
+    _cfg.check_sig = validate;
+    _cfg.unsafe    = allow_insecure_https;
+
+    if (semver_parse(firmwareSemanticVersion.c_str(), &_cfg.version)) {
         log_e( "Invalid semver string %s passed to constructor. Defaulting to 0", firmwareSemanticVersion.c_str() );
-        _firmwareVersion = semver_t {0};
+        _cfg.version = semver_t {0};
     }
-    _firmwareType = firmwareType;
-    _check_sig = validate;
-    _allow_insecure_https = allow_insecure_https;
-    useDeviceID = false;
+
     setupCryptoAssets();
-    debugSemVer("Current firmware version", &_firmwareVersion );
+    debugSemVer("Current firmware version", &_cfg.version );
 }
 
 
 esp32FOTA::~esp32FOTA()
 {
-    semver_free(&_firmwareVersion);
+    semver_free(&_cfg.version);
     semver_free(&_payloadVersion);
 }
 
@@ -128,8 +138,8 @@ void esp32FOTA::setCertFileSystem( fs::FS *cert_filesystem )
 void esp32FOTA::setupCryptoAssets()
 {
     if( _fs ) {
-        PubKey = (CryptoAsset*)(new CryptoFileAsset( rsa_key_pub_default_path, _fs  ));
-        RootCA = (CryptoAsset*)(new CryptoFileAsset( root_ca_pem_default_path, _fs  ));
+        _cfg.pub_key = (CryptoAsset*)(new CryptoFileAsset( rsa_key_pub_default_path, _fs  ));
+        _cfg.root_ca = (CryptoAsset*)(new CryptoFileAsset( root_ca_pem_default_path, _fs  ));
     }
 }
 
@@ -140,8 +150,8 @@ void esp32FOTA::setupCryptoAssets()
 bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *signature, uint32_t firmware_size )
 {
     int ret = 1;
-    size_t pubkeylen = PubKey ? PubKey->size()+1 : 0;
-    const char* pubkeystr = PubKey->get();
+    size_t pubkeylen = _cfg.pub_key ? _cfg.pub_key->size()+1 : 0;
+    const char* pubkeystr = _cfg.pub_key->get();
 
     if( pubkeylen <= 1 ) {
         return false;
@@ -284,13 +294,13 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
 
     log_i("Connecting to: %s\r\n", UpdateURL.c_str() );
     if( UpdateURL.substring( 0, 5 ) == "https" ) {
-        if (!_allow_insecure_https) {
+        if (!_cfg.unsafe) {
             log_i( "Loading root_ca.pem" );
-            if( !RootCA || RootCA->size() == 0 ) {
+            if( !_cfg.root_ca || _cfg.root_ca->size() == 0 ) {
                 log_e("A strict security context has been set but no RootCA was provided");
                 return;
             }
-            rootcastr = RootCA->get();
+            rootcastr = _cfg.root_ca->get();
             if( !rootcastr ) {
                 log_e("Unable to get RootCA, aborting");
                 return;
@@ -363,7 +373,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
 
     log_i("contentLength : %i, isValidContentType : %s", contentLength, String(isValidContentType));
 
-    if( _check_sig && contentLength != UPDATE_SIZE_UNKNOWN ) {
+    if( _cfg.check_sig && contentLength != UPDATE_SIZE_UNKNOWN ) {
         // If firmware is signed, extract signature and decrease content-length by 512 bytes for signature
         contentLength -= 512;
     }
@@ -377,8 +387,8 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
         return;
     }
 
-    if( _ota_progress_callback ) {
-        Update.onProgress( _ota_progress_callback );
+    if( onOTAProgress ) {
+        Update.onProgress( onOTAProgress );
     } else {
         Update.onProgress( [](size_t progress, size_t size) {
             if( progress == size || progress == 0 ) Serial.println();
@@ -389,7 +399,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
     Stream& stream = http.getStream();
 
     unsigned char signature[512];
-    if( _check_sig ) {
+    if( _cfg.check_sig ) {
         stream.readBytes( signature, 512 );
     }
     Serial.printf("Begin %s OTA. This may take 2 - 5 mins to complete. Things might be quiet for a while.. Patience!\n", partition==U_FLASH?"Firmware":"Filesystem");
@@ -429,7 +439,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
 
     if( onUpdateEnd ) onUpdateEnd( partition );
 
-    if( _check_sig ) { // check signature
+    if( _cfg.check_sig ) { // check signature
 
         getPartition( partition ); // retrieve the last updated partition pointer
 
@@ -507,12 +517,12 @@ void esp32FOTA::getPartition( int update_partition )
 
 bool esp32FOTA::checkJSONManifest(JsonVariant doc)
 {
-    if(strcmp(doc["type"].as<const char *>(), _firmwareType.c_str()) != 0) {
-        log_d("Payload type in manifest %s doesn't match current firmware %s", doc["type"].as<const char *>(), _firmwareType.c_str() );
-        log_d("Doesn't match type: %s", _firmwareType.c_str() );
+    if(strcmp(doc["type"].as<const char *>(), _cfg.name) != 0) {
+        log_d("Payload type in manifest %s doesn't match current firmware %s", doc["type"].as<const char *>(), _cfg.name );
+        log_d("Doesn't match type: %s", _cfg.name );
         return false;  // Move to the next entry in the manifest
     }
-    log_i("Payload type in manifest %s matches current firmware %s", doc["type"].as<const char *>(), _firmwareType.c_str() );
+    log_i("Payload type in manifest %s matches current firmware %s", doc["type"].as<const char *>(), _cfg.name );
 
     semver_free(&_payloadVersion);
 
@@ -582,7 +592,7 @@ bool esp32FOTA::checkJSONManifest(JsonVariant doc)
         return false;
     }
 
-    if (semver_compare(_payloadVersion, _firmwareVersion) == 1) {
+    if (semver_compare(_payloadVersion, _cfg.version) == 1) {
         return true;
     }
     return false;
@@ -591,12 +601,12 @@ bool esp32FOTA::checkJSONManifest(JsonVariant doc)
 
 bool esp32FOTA::execHTTPcheck()
 {
-    String useURL = checkURL;
+    String useURL = String( _cfg.manifest_url );
     const char* rootcastr = nullptr;
 
-    if (useDeviceID) {
+    if (_cfg.use_device_id) {
         // URL may already have GET values
-        String argseparator = (checkURL.indexOf('?') != -1 ) ? "&" : "?";
+        String argseparator = (useURL.indexOf('?') != -1 ) ? "&" : "?";
         useURL += argseparator + "id=" + getDeviceID();
     }
 
@@ -613,16 +623,16 @@ bool esp32FOTA::execHTTPcheck()
     http.setFollowRedirects( HTTPC_STRICT_FOLLOW_REDIRECTS );
 
     if( useURL.substring( 0, 5 ) == "https" ) {
-        if( _allow_insecure_https ) {
+        if( _cfg.unsafe ) {
             // We're downloading from a secure port, but we don't want to validate the root cert.
             client.setInsecure();
         } else {
             // We're downloading from a secure port, and want to validate the root cert.
-            if( !RootCA || RootCA->size() == 0 ) {
+            if( !_cfg.root_ca || _cfg.root_ca->size() == 0 ) {
                 log_e("A strict security context has been set but no RootCA was provided, aborting");
                 return false;
             }
-            rootcastr = RootCA->get();
+            rootcastr = _cfg.root_ca->get();
             if( !rootcastr ) {
                 log_e("Unable to get RootCA, aborting");
                 return false;
@@ -699,7 +709,7 @@ String esp32FOTA::getDeviceID()
 void esp32FOTA::forceUpdate(String firmwareURL, bool validate )
 {
     _firmwareUrl = firmwareURL;
-    _check_sig   = validate;
+    _cfg.check_sig   = validate;
     execOTA();
 }
 
@@ -723,7 +733,7 @@ void esp32FOTA::forceUpdate(bool validate )
             return;
         }
     }
-    _check_sig = validate;
+    _cfg.check_sig = validate;
     execOTA();
 }
 
