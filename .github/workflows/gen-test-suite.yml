@@ -70,6 +70,12 @@ on:
         - large_spiffs
         default: 'default'
 
+      hidden_field:
+        description: 'Should be invisible'
+        type: hidden
+        value: 'blah'
+
+
 
 jobs:
 
@@ -142,7 +148,38 @@ jobs:
         # insert more tests here
         - 99.final-stage.ino
 
+    env:
+      cert_path: /home/runner/certs
+      work_path: /home/runner/work
+      test_path: examples/anyFS/test
+      data_path: examples/anyFS/data
+      artifact_path: /home/runner/builds
+      mkspiffs_esp32: ~/.arduino15/packages/esp32*/tools/mkspiffs/*/mkspiffs
+      mklittlefs_esp32: ~/.arduino15/packages/esp32*/tools/mklittlefs/*/mklittlefs
+      privkey_path: /home/runner/certs/priv_key.pem
+      spiffs_bin_path: /home/runner/builds/2.cert-in-spiffs.spiffs.bin
+      littlefs_bin_path: /home/runner/builds/4.cert-in-littlefs.littlefs.bin
+      spiffs_signed_bin_path: /home/runner/builds/99.final-stage.spiffs.signed.bin
+      littlefs_signed_bin_path: /home/runner/builds/99.final-stage.littlefs.signed.bin
+      firmware_json_path: /home/runner/builds/firmware.json
+
     steps:
+
+      - name: Matrix env debug
+        run: |
+          echo "cert_path: ${{ env.cert_path }}"
+          echo "work_path: ${{ env.work_path }}"
+          echo "test_path: ${{ env.test_path }}"
+          echo "data_path: ${{ env.data_path }}"
+          echo "artifact_path: ${{ env.artifact_path }}"
+          echo "mkspiffs_esp32: ${{ env.mkspiffs_esp32 }}"
+          echo "mklittlefs_esp32: ${{ env.mklittlefs_esp32 }}"
+          echo "privkey_path: ${{ env.privkey_path }}"
+          echo "spiffs_bin_path: ${{ env.spiffs_bin_path }}"
+          echo "littlefs_bin_path: ${{ env.littlefs_bin_path }}"
+          echo "spiffs_signed_bin_path: ${{ env.spiffs_signed_bin_path }}"
+          echo "littlefs_signed_bin_path: ${{ env.littlefs_signed_bin_path }}"
+          echo "firmware_json_path: ${{ env.firmware_json_path }}"
 
       - name: Checkout
         uses: actions/checkout@v2
@@ -164,7 +201,6 @@ jobs:
       - name: Inject RootCA/PubKey if applicable
         if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
         run: |
-          ls /home/runner/certs/* -la
           root_ca_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/root_ca.h
           cp /home/runner/certs/root_ca.h $root_ca_path
           pub_key_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/pub_key.h
@@ -180,25 +216,15 @@ jobs:
           extra-arduino-cli-args: "--warnings default " # see https://github.com/ArminJo/arduino-test-compile/issues/28
           sketch-names: ${{ matrix.sketch }}
           set-build-path: true
-          # build-properties: ${{ toJson(matrix.build-properties) }}
-          # arduino-platform: esp32:esp32@${{ matrix.sdk-version }}
-          # extra-arduino-cli-args: ${{ matrix.extra-arduino-cli-args }}
-          # debug-install: true
 
       - name: Sign and Save compiled binaries
         run: |
           mkdir -p /home/runner/builds
           full_ino_bin_path=`find /home/runner/work/ | grep "build/${{ matrix.sketch }}.bin"`
-          echo "Bin path: $full_ino_bin_path"
-
           openssl dgst -sign /home/runner/certs/priv_key.pem -keyform PEM -sha256 -out firmware.sign -binary $full_ino_bin_path
           cat firmware.sign $full_ino_bin_path > $full_ino_bin_path.img
-
-          # delete private key as it is no longer needed
-          rm /home/runner/certs/priv_key.pem
-
-          cp "$full_ino_bin_path" /home/runner/builds/${{ matrix.sketch }}.bin
-          cp "$full_ino_bin_path.img" /home/runner/builds/${{ matrix.sketch }}.signed.bin
+          cp $full_ino_bin_path /home/runner/builds/${{ matrix.sketch }}.bin
+          cp $full_ino_bin_path.img /home/runner/builds/${{ matrix.sketch }}.signed.bin
 
       - name: Prepare data folder if applicable
         if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
@@ -220,11 +246,28 @@ jobs:
           # Find mkspiffs and mklittlefs binaries ... ooh that's dirty :-)
           mkspiffs_esp32=~/.arduino15/packages/esp32*/tools/mkspiffs/*/mkspiffs
           mklittlefs_esp32=~/.arduino15/packages/esp32*/tools/mklittlefs/*/mklittlefs
-          echo "[DEBUG] mkspiffs path: $mkspiffs_esp32"
-          echo "[DEBUG] mklittlefs path: $mklittlefs_esp32"
+
+          privkey_path=/home/runner/certs/priv_key.pem
+          data_path=examples/anyFS/data/
+          spiffs_bin_path=/home/runner/builds/2.cert-in-spiffs.spiffs.bin
+          littlefs_bin_path=/home/runner/builds/4.cert-in-littlefs.littlefs.bin
+          spiffs_signed_bin_path=/home/runner/builds/99.final-stage.spiffs.signed.bin
+          littlefs_signed_bin_path=/home/runner/builds/99.final-stage.littlefs.signed.bin
+          echo "[DEBUG] mkspiffs: $mkspiffs_esp32 / $spiffs_bin_path / $spiffs_signed_bin_path"
+          echo "[DEBUG] mklittlefs: $mklittlefs_esp32 / $mklittlefs_bin_path / $mklittlefs_signed_bin_path"
+
           # Create the partition binaries
-          $mkspiffs_esp32 -c examples/anyFS/data/ -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size /home/runner/builds/2.cert-in-spiffs.spiffs.bin
-          $mklittlefs_esp32 -c examples/anyFS/data/ -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size /home/runner/builds/4.cert-in-littlefs.littlefs.bin
+          $mkspiffs_esp32 -c $data_path -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size $spiffs_bin_path
+          $mklittlefs_esp32 -c $data_path -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size $littlefs_bin_path
+
+          # Sign partition binaries
+          openssl dgst -sign $privkey_path -keyform PEM -sha256 -out firmware.sign -binary $spiffs_bin_path
+          cat firmware.sign $spiffs_bin_path > $spiffs_signed_bin_path
+          openssl dgst -sign $privkey_path -keyform PEM -sha256 -out firmware.sign -binary $littlefs_bin_path
+          cat firmware.sign $littlefs_bin_path > $littlefs_signed_bin_path
+
+          # delete private key as it is no longer needed
+          rm $privkey_path
 
       - name: Upload artifact for Stage ${{ matrix.test-stage }}
         uses: actions/upload-artifact@v2
