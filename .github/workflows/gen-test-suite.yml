@@ -91,6 +91,7 @@ jobs:
       spiffs_signed_bin_path: /home/runner/builds/99.final-stage.spiffs.signed.bin
       littlefs_signed_bin_path: /home/runner/builds/99.final-stage.littlefs.signed.bin
       firmware_json_path: /home/runner/builds/firmware.json
+      firmware_json_template_path: .github/templates/firmware.test-suite.json
 
     outputs:
       env: ${{steps.set-env.outputs.env}}
@@ -247,22 +248,12 @@ jobs:
         openssl dgst -sign ${{env.privkey_path}} -keyform PEM -sha256 -out firmware.sign -binary ${{env.littlefs_bin_path}}
         cat firmware.sign ${{env.littlefs_bin_path}} > ${{env.littlefs_signed_bin_path}}
 
-        # delete private key as it is no longer needed
-        rm ${{env.privkey_path}}
-
     - name: Update TestSuite artifact
       uses: actions/upload-artifact@v2
       with:
         name: TestSuite
         path: |
           ${{env.artifact_path}}/**
-
-    - name: Update Certs artifact (after privkey deletion)
-      uses: actions/upload-artifact@v2
-      with:
-        name: Certs
-        path: |
-          ${{env.cert_path}}/**
 
 
   post_build:
@@ -283,12 +274,16 @@ jobs:
     - name: Polulate JSON Manifest
       run: |
         mkdir -p ${{env.artifact_path}}
-        cp .github/templates/firmware.test-suite.json ${{env.firmware_json_path}}
-        sed -i -e 's/FIRMWARE_TYPE/${{inputs.firmware_type}}/g' ${{env.firmware_json_path}}
-        sed -i -e 's/FIRMWARE_HOST/${{inputs.manifest_host}}/g' ${{env.firmware_json_path}}
-        sed -i -e 's/FIRMWARE_PORT/${{inputs.manifest_port}}/g' ${{env.firmware_json_path}}
+        mkdir -p ${{env.cert_path}}
+        cp ${{env.firmware_json_template_path}} ${{env.firmware_json_path}}
+        sed -i -e 's~FIRMWARE_TYPE~${{inputs.firmware_type}}~g' ${{env.firmware_json_path}}
+        sed -i -e 's~FIRMWARE_HOST~${{inputs.manifest_host}}~g' ${{env.firmware_json_path}}
+        sed -i -e 's~FIRMWARE_PORT~${{inputs.manifest_port}}~g' ${{env.firmware_json_path}}
         sed -i -e 's~FIRMWARE_PATH~${{inputs.manifest_bin_path}}~g' ${{env.firmware_json_path}}
         cat ${{env.firmware_json_path}}
+
+        # delete private key as it is no longer needed
+        # rm ${{env.privkey_path}}
 
     - name: Update TestSuite artifacts with new JSON Manifest
       uses: actions/upload-artifact@v2
@@ -296,6 +291,11 @@ jobs:
         name: TestSuite
         path: |
           ${{env.artifact_path}}/**
+
+    - name: Delete Cert/Signature/Privkey artifact
+      uses: geekyeggo/delete-artifact@v1
+      with:
+        name: Certs
 
     # Eventually enable one of those
 
