@@ -250,7 +250,7 @@ jobs:
           # delete private key as it is no longer needed
           rm ${{env.privkey_path}}
 
-      - name: Upload artifact for Stage ${{ matrix.test-stage }}
+      - name: Update TestSuite artifact
         uses: actions/upload-artifact@v2
         with:
           name: TestSuite
@@ -290,7 +290,7 @@ jobs:
           sed -i -e 's~FIRMWARE_PATH~${{ inputs.manifest_bin_path }}~g' ${{env.firmware_json_path}}
           cat ${{env.firmware_json_path}}
 
-      - name: Update artifacts with new JSON Manifest
+      - name: Update TestSuite artifacts with new JSON Manifest
         uses: actions/upload-artifact@v2
         with:
           name: TestSuite
