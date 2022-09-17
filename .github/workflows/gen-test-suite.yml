@@ -172,97 +172,97 @@ jobs:
 
     steps:
 
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Retrieve RootCA/PubKey
-        uses: actions/download-artifact@v3
-        with:
-          name: Certs
-          path: ${{env.cert_path}}
+    - name: Retrieve RootCA/PubKey
+      uses: actions/download-artifact@v3
+      with:
+        name: Certs
+        path: ${{env.cert_path}}
 
-      # The '#define FOTA_URL' declaration will override the default fota_url in the test suite code
-      - name: Inject Manifest URL
-        run: |
-          full_ino_path=`find ${{env.work_path}}/ | grep "${{ matrix.sketch }}"`
-          echo -e "#define FOTA_URL \"${{inputs.manifest_url}}\"\n$(cat $full_ino_path)" > $full_ino_path
+    # The '#define FOTA_URL' declaration will override the default fota_url in the test suite code
+    - name: Inject Manifest URL
+      run: |
+        full_ino_path=`find ${{env.work_path}}/ | grep "${{ matrix.sketch }}"`
+        echo -e "#define FOTA_URL \"${{inputs.manifest_url}}\"\n$(cat $full_ino_path)" > $full_ino_path
 
-      - name: Inject RootCA/PubKey if applicable
-        if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
-        run: |
-          root_ca_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/root_ca.h
-          cp ${{env.cert_path}}/root_ca.h $root_ca_path
-          pub_key_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/pub_key.h
-          cp ${{env.cert_path}}/root_ca.h $pub_key_path
+    - name: Inject RootCA/PubKey if applicable
+      if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
+      run: |
+        root_ca_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/root_ca.h
+        cp ${{env.cert_path}}/root_ca.h $root_ca_path
+        pub_key_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/pub_key.h
+        cp ${{env.cert_path}}/root_ca.h $pub_key_path
 
-      - name: Compile ${{ matrix.sketch }}
-        uses: ArminJo/arduino-test-compile@v3
-        with:
-          platform-url: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_dev_index.json
-          arduino-board-fqbn: ${{inputs.board_fqbn}}:PartitionScheme=${{inputs.partition_scheme}}
-          required-libraries: ArduinoJson
-          extra-arduino-lib-install-args: --no-deps
-          extra-arduino-cli-args: "--warnings default " # see https://github.com/ArminJo/arduino-test-compile/issues/28
-          sketch-names: ${{ matrix.sketch }}
-          set-build-path: true
+    - name: Compile ${{ matrix.sketch }}
+      uses: ArminJo/arduino-test-compile@v3
+      with:
+        platform-url: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_dev_index.json
+        arduino-board-fqbn: ${{inputs.board_fqbn}}:PartitionScheme=${{inputs.partition_scheme}}
+        required-libraries: ArduinoJson
+        extra-arduino-lib-install-args: --no-deps
+        extra-arduino-cli-args: "--warnings default " # see https://github.com/ArminJo/arduino-test-compile/issues/28
+        sketch-names: ${{ matrix.sketch }}
+        set-build-path: true
 
-      - name: Sign and Save compiled binary
-        run: |
-          mkdir -p ${{env.artifact_path}}
-          full_ino_bin_path=`find ${{env.work_path}}/ | grep "build/${{ matrix.sketch }}.bin"`
-          openssl dgst -sign ${{env.privkey_path}} -keyform PEM -sha256 -out firmware.sign -binary $full_ino_bin_path
-          cat firmware.sign $full_ino_bin_path > $full_ino_bin_path.img
-          cp $full_ino_bin_path ${{env.artifact_path}}/${{ matrix.sketch }}.bin
-          cp $full_ino_bin_path.img ${{env.artifact_path}}/${{ matrix.sketch }}.signed.bin
+    - name: Sign and Save compiled binary
+      run: |
+        mkdir -p ${{env.artifact_path}}
+        full_ino_bin_path=`find ${{env.work_path}}/ | grep "build/${{ matrix.sketch }}.bin"`
+        openssl dgst -sign ${{env.privkey_path}} -keyform PEM -sha256 -out firmware.sign -binary $full_ino_bin_path
+        cat firmware.sign $full_ino_bin_path > $full_ino_bin_path.img
+        cp $full_ino_bin_path ${{env.artifact_path}}/${{ matrix.sketch }}.bin
+        cp $full_ino_bin_path.img ${{env.artifact_path}}/${{ matrix.sketch }}.signed.bin
 
-      - name: Prepare data folder
-        if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
-        run: |
-          root_ca_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/root_ca.pem
-          pub_key_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/rsa_key.pub
-          cp /home/runner/certs/root_ca.pem $root_ca_path
-          cp /home/runner/certs/rsa_key.pub $pub_key_path
-          cp /home/runner/certs/root_ca.pem examples/anyFS/data/
-          cp /home/runner/certs/rsa_key.pub examples/anyFS/data/
+    - name: Prepare data folder
+      if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
+      run: |
+        root_ca_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/root_ca.pem
+        pub_key_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/rsa_key.pub
+        cp /home/runner/certs/root_ca.pem $root_ca_path
+        cp /home/runner/certs/rsa_key.pub $pub_key_path
+        cp /home/runner/certs/root_ca.pem examples/anyFS/data/
+        cp /home/runner/certs/rsa_key.pub examples/anyFS/data/
 
-      - name: Create and sign filesystem images
-        run: |
-          # Provide partition name=>size translation
-          default_size=0x170000
-          large_spiffs_size=0x6F0000
-          min_spiffs_size=0x30000
+    - name: Create and sign filesystem images
+      run: |
+        # Provide partition name=>size translation
+        default_size=0x170000
+        large_spiffs_size=0x6F0000
+        min_spiffs_size=0x30000
 
-          echo "[DEBUG] mkspiffs: ${{env.mkspiffs_esp32}} / ${{env.spiffs_bin_path}} / ${{env.spiffs_signed_bin_path}}"
-          echo "[DEBUG] mklittlefs: ${{env.mklittlefs_esp32}} / ${{env.mklittlefs_bin_path}} / ${{env.mklittlefs_signed_bin_path}}"
+        echo "[DEBUG] mkspiffs: ${{env.mkspiffs_esp32}} / ${{env.spiffs_bin_path}} / ${{env.spiffs_signed_bin_path}}"
+        echo "[DEBUG] mklittlefs: ${{env.mklittlefs_esp32}} / ${{env.mklittlefs_bin_path}} / ${{env.mklittlefs_signed_bin_path}}"
 
-          # Create the partition binaries
-          ${{env.mkspiffs_esp32}} -c ${{env.data_path}} -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size ${{env.spiffs_bin_path}}
-          ${{env.mklittlefs_esp32}} -c ${{env.data_path}} -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size ${{env.littlefs_bin_path}}
+        # Create the partition binaries
+        ${{env.mkspiffs_esp32}} -c ${{env.data_path}} -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size ${{env.spiffs_bin_path}}
+        ${{env.mklittlefs_esp32}} -c ${{env.data_path}} -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size ${{env.littlefs_bin_path}}
 
-          # Sign partition binaries
-          openssl dgst -sign ${{env.privkey_path}} -keyform PEM -sha256 -out firmware.sign -binary ${{env.spiffs_bin_path}}
-          cat firmware.sign ${{env.spiffs_bin_path}} > ${{env.spiffs_signed_bin_path}}
-          openssl dgst -sign ${{env.privkey_path}} -keyform PEM -sha256 -out firmware.sign -binary ${{env.littlefs_bin_path}}
-          cat firmware.sign ${{env.littlefs_bin_path}} > ${{env.littlefs_signed_bin_path}}
+        # Sign partition binaries
+        openssl dgst -sign ${{env.privkey_path}} -keyform PEM -sha256 -out firmware.sign -binary ${{env.spiffs_bin_path}}
+        cat firmware.sign ${{env.spiffs_bin_path}} > ${{env.spiffs_signed_bin_path}}
+        openssl dgst -sign ${{env.privkey_path}} -keyform PEM -sha256 -out firmware.sign -binary ${{env.littlefs_bin_path}}
+        cat firmware.sign ${{env.littlefs_bin_path}} > ${{env.littlefs_signed_bin_path}}
 
-          # delete private key as it is no longer needed
-          rm ${{env.privkey_path}}
+        # delete private key as it is no longer needed
+        rm ${{env.privkey_path}}
 
-      - name: Update TestSuite artifact
-        uses: actions/upload-artifact@v2
-        with:
-          name: TestSuite
-          path: |
-            ${{env.artifact_path}}/**
+    - name: Update TestSuite artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: TestSuite
+        path: |
+          ${{env.artifact_path}}/**
 
-      - name: Update Certs artifact (after privkey deletion)
-        uses: actions/upload-artifact@v2
-        with:
-          name: Certs
-          path: |
-            ${{env.cert_path}}/**
+    - name: Update Certs artifact (after privkey deletion)
+      uses: actions/upload-artifact@v2
+      with:
+        name: Certs
+        path: |
+          ${{env.cert_path}}/**
 
 
   post_build:
@@ -275,52 +275,52 @@ jobs:
 
     steps:
 
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Polulate JSON Manifest
-        run: |
-          mkdir -p ${{env.artifact_path}}
-          cp .github/templates/firmware.test-suite.json ${{env.firmware_json_path}}
-          sed -i -e 's/FIRMWARE_TYPE/${{inputs.firmware_type}}/g' ${{env.firmware_json_path}}
-          sed -i -e 's/FIRMWARE_HOST/${{inputs.manifest_host}}/g' ${{env.firmware_json_path}}
-          sed -i -e 's/FIRMWARE_PORT/${{inputs.manifest_port}}/g' ${{env.firmware_json_path}}
-          sed -i -e 's~FIRMWARE_PATH~${{inputs.manifest_bin_path}}~g' ${{env.firmware_json_path}}
-          cat ${{env.firmware_json_path}}
+    - name: Polulate JSON Manifest
+      run: |
+        mkdir -p ${{env.artifact_path}}
+        cp .github/templates/firmware.test-suite.json ${{env.firmware_json_path}}
+        sed -i -e 's/FIRMWARE_TYPE/${{inputs.firmware_type}}/g' ${{env.firmware_json_path}}
+        sed -i -e 's/FIRMWARE_HOST/${{inputs.manifest_host}}/g' ${{env.firmware_json_path}}
+        sed -i -e 's/FIRMWARE_PORT/${{inputs.manifest_port}}/g' ${{env.firmware_json_path}}
+        sed -i -e 's~FIRMWARE_PATH~${{inputs.manifest_bin_path}}~g' ${{env.firmware_json_path}}
+        cat ${{env.firmware_json_path}}
 
-      - name: Update TestSuite artifacts with new JSON Manifest
-        uses: actions/upload-artifact@v2
-        with:
-          name: TestSuite
-          path: |
-            ${{env.artifact_path}}/**
+    - name: Update TestSuite artifacts with new JSON Manifest
+      uses: actions/upload-artifact@v2
+      with:
+        name: TestSuite
+        path: |
+          ${{env.artifact_path}}/**
 
-      # Eventually enable one of those
+    # Eventually enable one of those
 
-      #- name: Deploy 🚀 artifacts as gh-pages
-        #uses: JamesIves/github-pages-deploy-action@v4
-        #with:
-          #branch: gh-pages # The branch the action should deploy to.
-          #folder: ${{env.artifact_path}}/ # The folder the action should deploy.
-
-
-      # /!\ This one requires a personal access token
-      #- name: Deploy 🚀 artifacts as Wiki assets
-        #uses: SwiftDocOrg/github-wiki-publish-action@v1
-        #with:
-          #path: |
-            #${{env.artifact_path}}/**
-        #env:
-          #GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+    #- name: Deploy 🚀 artifacts as gh-pages
+      #uses: JamesIves/github-pages-deploy-action@v4
+      #with:
+        #branch: gh-pages # The branch the action should deploy to.
+        #folder: ${{env.artifact_path}}/ # The folder the action should deploy.
 
 
-      # /!\ This one may require some tuning
-      #- name: Deploy 🚀 artifacts as Release
-        #uses: softprops/action-gh-release@v1
-        #if: startsWith(github.ref, 'refs/tags/')
-        #with:
-          #files: |
-            #${{env.artifact_path}}/**
+    # /!\ This one requires a personal access token
+    #- name: Deploy 🚀 artifacts as Wiki assets
+      #uses: SwiftDocOrg/github-wiki-publish-action@v1
+      #with:
+        #path: |
+          #${{env.artifact_path}}/**
+      #env:
+        #GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+
+
+    # /!\ This one may require some tuning
+    #- name: Deploy 🚀 artifacts as Release
+      #uses: softprops/action-gh-release@v1
+      #if: startsWith(github.ref, 'refs/tags/')
+      #with:
+        #files: |
+          #${{env.artifact_path}}/**
 
