@@ -124,13 +124,13 @@ jobs:
     - name: Generate rsa key and fetch certificate
       run: |
 
-        pub_key_path=${{env.artifact_path}}/rsa_key.pub
-        root_ca_path=${{env.artifact_path}}/root_ca.pem
+        pub_key_path=${{env.cert_path}}/rsa_key.pub
+        root_ca_path=${{env.cert_path}}/root_ca.pem
 
-        root_ca_h_path=${{env.artifact_path}}/root_ca.h
-        pub_key_h_path=${{env.artifact_path}}/rsa_key.h
+        root_ca_h_path=${{env.cert_path}}/root_ca.h
+        pub_key_h_path=${{env.cert_path}}/rsa_key.h
 
-        mkdir -p ${{env.artifact_path}}
+        mkdir -p ${{env.cert_path}}
 
         ssl_host="${{ inputs.manifest_host }}"
         root_ca_c_prefix="const char* root_ca =\\"
