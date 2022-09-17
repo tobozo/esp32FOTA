@@ -172,13 +172,12 @@ jobs:
         - 99.final-stage.ino
 
     # that's wild ... probably won't work
-    # env: ${{fromJSON(needs.gen_keys.outputs.env)}}
+    env: ${{fromJSON(needs.set_env.outputs.env)}}
 
     steps:
 
       - name: Matrix env debug
         run: |
-          # echo "Json: ${{fromJSON(needs.set_env.outputs.env)}}"
           echo "cert_path: ${{ env.cert_path }}"
           echo "work_path: ${{ env.work_path }}"
           echo "test_path: ${{ env.test_path }}"
