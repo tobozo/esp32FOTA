@@ -84,6 +84,22 @@ jobs:
     name: "Openssl: generate rsa key and fetch certificate"
     runs-on: ubuntu-latest
 
+
+    env:
+      cert_path: /home/runner/certs
+      work_path: /home/runner/work
+      test_path: examples/anyFS/test
+      data_path: examples/anyFS/data
+      artifact_path: /home/runner/builds
+      mkspiffs_esp32: ~/.arduino15/packages/esp32*/tools/mkspiffs/*/mkspiffs
+      mklittlefs_esp32: ~/.arduino15/packages/esp32*/tools/mklittlefs/*/mklittlefs
+      privkey_path: /home/runner/certs/priv_key.pem
+      spiffs_bin_path: /home/runner/builds/2.cert-in-spiffs.spiffs.bin
+      littlefs_bin_path: /home/runner/builds/4.cert-in-littlefs.littlefs.bin
+      spiffs_signed_bin_path: /home/runner/builds/99.final-stage.spiffs.signed.bin
+      littlefs_signed_bin_path: /home/runner/builds/99.final-stage.littlefs.signed.bin
+      firmware_json_path: /home/runner/builds/firmware.json
+
     steps:
 
     #- name: Checkout repository
@@ -148,20 +164,8 @@ jobs:
         # insert more tests here
         - 99.final-stage.ino
 
-    env:
-      cert_path: /home/runner/certs
-      work_path: /home/runner/work
-      test_path: examples/anyFS/test
-      data_path: examples/anyFS/data
-      artifact_path: /home/runner/builds
-      mkspiffs_esp32: ~/.arduino15/packages/esp32*/tools/mkspiffs/*/mkspiffs
-      mklittlefs_esp32: ~/.arduino15/packages/esp32*/tools/mklittlefs/*/mklittlefs
-      privkey_path: /home/runner/certs/priv_key.pem
-      spiffs_bin_path: /home/runner/builds/2.cert-in-spiffs.spiffs.bin
-      littlefs_bin_path: /home/runner/builds/4.cert-in-littlefs.littlefs.bin
-      spiffs_signed_bin_path: /home/runner/builds/99.final-stage.spiffs.signed.bin
-      littlefs_signed_bin_path: /home/runner/builds/99.final-stage.littlefs.signed.bin
-      firmware_json_path: /home/runner/builds/firmware.json
+    # that's wild ... probably won't work
+    env: ${{fromJSON(needs.gen_keys.env)}}
 
     steps:
 
