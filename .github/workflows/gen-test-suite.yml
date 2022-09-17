@@ -173,9 +173,9 @@ jobs:
         run: |
           ls /home/runner/certs/* -la
           root_ca_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/root_ca.h
-          cat /home/runner/certs/root_ca.h > $root_ca_path
+          cp /home/runner/certs/root_ca.h $root_ca_path
           pub_key_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/pub_key.h
-          cat /home/runner/certs/root_ca.h > $pub_key_path
+          cp /home/runner/certs/root_ca.h $pub_key_path
 
       - name: ${{ matrix.sketch }}
         uses: ArminJo/arduino-test-compile@v3
@@ -200,7 +200,7 @@ jobs:
           echo "Bin path: $full_ino_bin_path"
 
           openssl dgst -sign /home/runner/certs/priv_key.pem -keyform PEM -sha256 -out firmware.sign -binary $full_ino_bin_path
-          cat firmware.sign firmware.bin > $full_ino_bin_path.img
+          cat firmware.sign $full_ino_bin_path > $full_ino_bin_path.img
 
           cp "$full_ino_bin_path" /home/runner/builds/${{ matrix.sketch }}.bin
           cp "$full_ino_bin_path.img" /home/runner/builds/${{ matrix.sketch }}.signed.bin
