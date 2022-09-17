@@ -158,6 +158,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: Certs
+          path: /home/runner/certs
 
       - name: Inject Manifest URL
         run: |
