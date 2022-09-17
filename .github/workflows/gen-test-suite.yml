@@ -70,12 +70,6 @@ on:
         - large_spiffs
         default: 'default'
 
-      hidden_field:
-        description: 'Should be invisible'
-        type: hidden
-        value: 'blah'
-
-
 
 jobs:
 
@@ -165,12 +159,13 @@ jobs:
         - 99.final-stage.ino
 
     # that's wild ... probably won't work
-    env: ${{fromJSON(needs.gen_keys.env)}}
+    env: ${{needs.gen_keys.env}}
 
     steps:
 
       - name: Matrix env debug
         run: |
+          echo "Json: ${{fromJSON(needs.gen_keys.env)}}"
           echo "cert_path: ${{ env.cert_path }}"
           echo "work_path: ${{ env.work_path }}"
           echo "test_path: ${{ env.test_path }}"
