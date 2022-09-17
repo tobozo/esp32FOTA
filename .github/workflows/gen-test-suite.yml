@@ -194,6 +194,9 @@ jobs:
           openssl dgst -sign /home/runner/certs/priv_key.pem -keyform PEM -sha256 -out firmware.sign -binary $full_ino_bin_path
           cat firmware.sign $full_ino_bin_path > $full_ino_bin_path.img
 
+          # delete private key as it is no longer needed
+          rm /home/runner/certs/priv_key.pem
+
           cp "$full_ino_bin_path" /home/runner/builds/${{ matrix.sketch }}.bin
           cp "$full_ino_bin_path.img" /home/runner/builds/${{ matrix.sketch }}.signed.bin
 
