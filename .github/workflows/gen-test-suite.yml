@@ -73,61 +73,66 @@ on:
 
 jobs:
 
-  gen_keys:
-    - name: Checkout
-      uses: actions/checkout@v2
-      with:
-        ref: ${{ github.event.pull_request.head.sha }}
-    - name: Generate openssl stuff
-      run: |
-        artifact_path=/home/runner/certs/
-        privkey_path=$artifact_path/priv_key.pem
-        pub_key_path=$artifact_path/rsa_key.pub
-        root_ca_path=$artifact_path/root_ca.pem
-
-        root_ca_h_path=$artifact_path/root_ca.h
-        pub_key_h_path=$artifact_path/rsa_key.h
-
-        mkdir -p $artifact_path
-
-        ssl_host="${{ inputs.manifest_host }}"
-        root_ca_c_prefix="const char* root_ca =\\"
-        pub_key_c_prefix="const char* pub_key =\\"
-        c_suffix="\"\";"
-
-        # Retrieve a copy of a certificate chain using openssl and split contents in "const char*" C/C++ declaration
-        openssl s_client -showcerts -connect $ssl_host:${{ inputs.manifest_port }} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > $root_ca_path
-        echo $root_ca_c_prefix > $root_ca_h_path
-        cat $root_ca_path | awk '{print "\"" $0 "\\n\"\\"}' >> $root_ca_h_path
-        echo $c_suffix >> $root_ca_h_path
-
-        # Generate privkey for later signing and split contents in "const char*" C/C++ declaration
-        openssl genrsa -out $privkey_path 4096
-        openssl rsa -in $privkey_path -pubout > $pub_key_path
-        echo $pub_key_c_prefix > $pub_key_h_path
-        cat $pub_key_path | awk '{print "\"" $0 "\\n\"\\"}' > $pub_key_h_path
-        echo $c_suffix >> $pub_key_h_path
-
-        echo "Generated files:"
-        cat $pub_key_path
-        cat $pub_key_h_path
-        cat $root_ca_path
-        cat $root_ca_h_path
+  pre_build_checkout:
+    name: Checkout
+    uses: actions/checkout@v2
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
 
 
-    - name: Upload RootCA/PubKey as artifact
-      uses: actions/upload-artifact@v2
-      with:
-        name: Certs
-        path: |
-          /home/runner/certs/**
+  pre_build_gen_keys:
+    needs: pre_build_checkout
+    name: Generate openssl stuff
+    run: |
+      artifact_path=/home/runner/certs/
+      privkey_path=$artifact_path/priv_key.pem
+      pub_key_path=$artifact_path/rsa_key.pub
+      root_ca_path=$artifact_path/root_ca.pem
+
+      root_ca_h_path=$artifact_path/root_ca.h
+      pub_key_h_path=$artifact_path/rsa_key.h
+
+      mkdir -p $artifact_path
+
+      ssl_host="${{ inputs.manifest_host }}"
+      root_ca_c_prefix="const char* root_ca =\\"
+      pub_key_c_prefix="const char* pub_key =\\"
+      c_suffix="\"\";"
+
+      # Retrieve a copy of a certificate chain using openssl and split contents in "const char*" C/C++ declaration
+      openssl s_client -showcerts -connect $ssl_host:${{ inputs.manifest_port }} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > $root_ca_path
+      echo $root_ca_c_prefix > $root_ca_h_path
+      cat $root_ca_path | awk '{print "\"" $0 "\\n\"\\"}' >> $root_ca_h_path
+      echo $c_suffix >> $root_ca_h_path
+
+      # Generate privkey for later signing and split contents in "const char*" C/C++ declaration
+      openssl genrsa -out $privkey_path 4096
+      openssl rsa -in $privkey_path -pubout > $pub_key_path
+      echo $pub_key_c_prefix > $pub_key_h_path
+      cat $pub_key_path | awk '{print "\"" $0 "\\n\"\\"}' > $pub_key_h_path
+      echo $c_suffix >> $pub_key_h_path
+
+      echo "Generated files:"
+      cat $pub_key_path
+      cat $pub_key_h_path
+      cat $root_ca_path
+      cat $root_ca_h_path
+
+  pre_build_store_keys:
+    needs: pre_build_gen_keys
+    name: Upload RootCA/PubKey as artifact
+    uses: actions/upload-artifact@v2
+    with:
+      name: Certs
+      path: |
+        /home/runner/certs/**
 
 
   matrix_build:
 
     name: ${{ matrix.sketch }}
     runs-on: ubuntu-latest
-    needs: gen_keys
+    needs: pre_build_store_keys
 
     strategy:
 
