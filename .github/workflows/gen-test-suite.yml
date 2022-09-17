@@ -123,15 +123,14 @@ jobs:
 
     - name: Generate rsa key and fetch certificate
       run: |
-        artifact_path=/home/runner/certs/
-        privkey_path=$artifact_path/priv_key.pem
-        pub_key_path=$artifact_path/rsa_key.pub
-        root_ca_path=$artifact_path/root_ca.pem
 
-        root_ca_h_path=$artifact_path/root_ca.h
-        pub_key_h_path=$artifact_path/rsa_key.h
+        pub_key_path=${{env.artifact_path}}/rsa_key.pub
+        root_ca_path=${{env.artifact_path}}/root_ca.pem
 
-        mkdir -p $artifact_path
+        root_ca_h_path=${{env.artifact_path}}/root_ca.h
+        pub_key_h_path=${{env.artifact_path}}/rsa_key.h
+
+        mkdir -p ${{env.artifact_path}}
 
         ssl_host="${{ inputs.manifest_host }}"
         root_ca_c_prefix="const char* root_ca =\\"
@@ -145,8 +144,8 @@ jobs:
         echo $c_suffix >> $root_ca_h_path
 
         # Generate privkey for later signing and split contents in "const char*" C/C++ declaration
-        openssl genrsa -out $privkey_path 4096
-        openssl rsa -in $privkey_path -pubout > $pub_key_path
+        openssl genrsa -out ${{env.privkey_path}} 4096
+        openssl rsa -in ${{env.privkey_path}} -pubout > $pub_key_path
         echo $pub_key_c_prefix > $pub_key_h_path
         cat $pub_key_path | awk '{print "\"" $0 "\\n\"\\"}' > $pub_key_h_path
         echo $c_suffix >> $pub_key_h_path
@@ -156,7 +155,7 @@ jobs:
       with:
         name: Certs
         path: |
-          /home/runner/certs/**
+          ${{env.cert_path}}/**
 
 
   matrix_build:
@@ -209,21 +208,21 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: Certs
-          path: /home/runner/certs
+          path: ${{env.cert_path}}
 
       - name: Inject Manifest URL
         run: |
           # The '#define FOTA_URL' declaration will override the default fota_url in the test suite code
-          full_ino_path=`find /home/runner/work/ | grep "${{ matrix.sketch }}"`
+          full_ino_path=`find ${{env.work_path}}/ | grep "${{ matrix.sketch }}"`
           echo -e "#define FOTA_URL \"${{ inputs.manifest_url }}\"\n$(cat $full_ino_path)" > $full_ino_path
 
       - name: Inject RootCA/PubKey if applicable
         if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
         run: |
-          root_ca_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/root_ca.h
-          cp /home/runner/certs/root_ca.h $root_ca_path
-          pub_key_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/pub_key.h
-          cp /home/runner/certs/root_ca.h $pub_key_path
+          root_ca_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/root_ca.h
+          cp ${{env.cert_path}}/root_ca.h $root_ca_path
+          pub_key_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/pub_key.h
+          cp ${{env.cert_path}}/root_ca.h $pub_key_path
 
       - name: ${{ matrix.sketch }}
         uses: ArminJo/arduino-test-compile@v3
@@ -238,18 +237,18 @@ jobs:
 
       - name: Sign and Save compiled binaries
         run: |
-          mkdir -p /home/runner/builds
-          full_ino_bin_path=`find /home/runner/work/ | grep "build/${{ matrix.sketch }}.bin"`
-          openssl dgst -sign /home/runner/certs/priv_key.pem -keyform PEM -sha256 -out firmware.sign -binary $full_ino_bin_path
+          mkdir -p ${{env.artifact_path}}
+          full_ino_bin_path=`find ${{env.work_path}}/ | grep "build/${{ matrix.sketch }}.bin"`
+          openssl dgst -sign ${{env.privkey_path}} -keyform PEM -sha256 -out firmware.sign -binary $full_ino_bin_path
           cat firmware.sign $full_ino_bin_path > $full_ino_bin_path.img
-          cp $full_ino_bin_path /home/runner/builds/${{ matrix.sketch }}.bin
-          cp $full_ino_bin_path.img /home/runner/builds/${{ matrix.sketch }}.signed.bin
+          cp $full_ino_bin_path ${{env.artifact_path}}/${{ matrix.sketch }}.bin
+          cp $full_ino_bin_path.img ${{env.artifact_path}}/${{ matrix.sketch }}.signed.bin
 
       - name: Prepare data folder if applicable
         if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
         run: |
-          root_ca_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/root_ca.pem
-          pub_key_path=`dirname examples/anyFS/test/${{ matrix.sketch }}`/rsa_key.pub
+          root_ca_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/root_ca.pem
+          pub_key_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/rsa_key.pub
 
           cp /home/runner/certs/root_ca.pem $root_ca_path
           cp /home/runner/certs/rsa_key.pub $pub_key_path
@@ -263,37 +262,36 @@ jobs:
           large_spiffs_size=0x6F0000
           min_spiffs_size=0x30000
           # Find mkspiffs and mklittlefs binaries ... ooh that's dirty :-)
-          mkspiffs_esp32=~/.arduino15/packages/esp32*/tools/mkspiffs/*/mkspiffs
-          mklittlefs_esp32=~/.arduino15/packages/esp32*/tools/mklittlefs/*/mklittlefs
+          #mkspiffs_esp32=~/.arduino15/packages/esp32*/tools/mkspiffs/*/mkspiffs
+          #mklittlefs_esp32=~/.arduino15/packages/esp32*/tools/mklittlefs/*/mklittlefs
 
-          privkey_path=/home/runner/certs/priv_key.pem
-          data_path=examples/anyFS/data/
-          spiffs_bin_path=/home/runner/builds/2.cert-in-spiffs.spiffs.bin
-          littlefs_bin_path=/home/runner/builds/4.cert-in-littlefs.littlefs.bin
-          spiffs_signed_bin_path=/home/runner/builds/99.final-stage.spiffs.signed.bin
-          littlefs_signed_bin_path=/home/runner/builds/99.final-stage.littlefs.signed.bin
-          echo "[DEBUG] mkspiffs: $mkspiffs_esp32 / $spiffs_bin_path / $spiffs_signed_bin_path"
-          echo "[DEBUG] mklittlefs: $mklittlefs_esp32 / $mklittlefs_bin_path / $mklittlefs_signed_bin_path"
+          #data_path=examples/anyFS/data/
+          #spiffs_bin_path=/home/runner/builds/2.cert-in-spiffs.spiffs.bin
+          #littlefs_bin_path=/home/runner/builds/4.cert-in-littlefs.littlefs.bin
+          #spiffs_signed_bin_path=/home/runner/builds/99.final-stage.spiffs.signed.bin
+          #littlefs_signed_bin_path=/home/runner/builds/99.final-stage.littlefs.signed.bin
+          echo "[DEBUG] mkspiffs: ${{env.mkspiffs_esp32}} / ${{env.spiffs_bin_path}} / ${{env.spiffs_signed_bin_path}}"
+          echo "[DEBUG] mklittlefs: ${{env.mklittlefs_esp32}} / ${{env.mklittlefs_bin_path}} / ${{env.mklittlefs_signed_bin_path}}"
 
           # Create the partition binaries
-          $mkspiffs_esp32 -c $data_path -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size $spiffs_bin_path
-          $mklittlefs_esp32 -c $data_path -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size $littlefs_bin_path
+          ${{env.mkspiffs_esp32}} -c ${{env.data_path}} -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size ${{env.spiffs_bin_path}}
+          ${{env.mklittlefs_esp32}} -c ${{env.data_path}} -p 256 -b 4096 -s $${{inputs.partition_scheme}}_size ${{env.littlefs_bin_path}}
 
           # Sign partition binaries
-          openssl dgst -sign $privkey_path -keyform PEM -sha256 -out firmware.sign -binary $spiffs_bin_path
-          cat firmware.sign $spiffs_bin_path > $spiffs_signed_bin_path
-          openssl dgst -sign $privkey_path -keyform PEM -sha256 -out firmware.sign -binary $littlefs_bin_path
-          cat firmware.sign $littlefs_bin_path > $littlefs_signed_bin_path
+          openssl dgst -sign ${{env.privkey_path}} -keyform PEM -sha256 -out firmware.sign -binary ${{env.spiffs_bin_path}}
+          cat firmware.sign ${{env.spiffs_bin_path}} > ${{env.spiffs_signed_bin_path}}
+          openssl dgst -sign ${{env.privkey_path}} -keyform PEM -sha256 -out firmware.sign -binary ${{env.littlefs_bin_path}}
+          cat firmware.sign ${{env.littlefs_bin_path}} > ${{env.littlefs_signed_bin_path}}
 
           # delete private key as it is no longer needed
-          rm $privkey_path
+          rm ${{env.privkey_path}}
 
       - name: Upload artifact for Stage ${{ matrix.test-stage }}
         uses: actions/upload-artifact@v2
         with:
           name: TestSuite
           path: |
-            /home/runner/builds/**
+            ${{env.artifact_path}}/**
 
 
   post_build:
@@ -301,7 +299,8 @@ jobs:
     name: Gather Artefacts
     runs-on: ubuntu-latest
     # wait until matrix jobs are all finished
-    needs: matrix_build
+    needs: [matrix_build,set_env]
+    env: ${{fromJSON(needs.set_env.outputs.env)}}
 
     steps:
 
@@ -312,21 +311,21 @@ jobs:
 
       - name: Polulate JSON Manifest
         run: |
-          firmware_json_path=/home/runner/builds/firmware.json
-          mkdir -p /home/runner/builds
-          cp .github/templates/firmware.test-suite.json $firmware_json_path
-          sed -i -e 's/FIRMWARE_TYPE/${{ inputs.firmware_type }}/g' $firmware_json_path
-          sed -i -e 's/FIRMWARE_HOST/${{ inputs.manifest_host }}/g' $firmware_json_path
-          sed -i -e 's/FIRMWARE_PORT/${{ inputs.manifest_port }}/g' $firmware_json_path
-          sed -i -e 's~FIRMWARE_PATH~${{ inputs.manifest_bin_path }}~g' $firmware_json_path
-          cat $firmware_json_path
+          # firmware_json_path=/home/runner/builds/firmware.json
+          mkdir -p ${{env.artifact_path}}
+          cp .github/templates/firmware.test-suite.json ${{env.firmware_json_path}}
+          sed -i -e 's/FIRMWARE_TYPE/${{ inputs.firmware_type }}/g' ${{env.firmware_json_path}}
+          sed -i -e 's/FIRMWARE_HOST/${{ inputs.manifest_host }}/g' ${{env.firmware_json_path}}
+          sed -i -e 's/FIRMWARE_PORT/${{ inputs.manifest_port }}/g' ${{env.firmware_json_path}}
+          sed -i -e 's~FIRMWARE_PATH~${{ inputs.manifest_bin_path }}~g' ${{env.firmware_json_path}}
+          cat ${{env.firmware_json_path}}
 
       - name: Update artifacts with new JSON Manifest
         uses: actions/upload-artifact@v2
         with:
           name: TestSuite
           path: |
-            /home/runner/builds/**
+            ${{env.artifact_path}}/**
 
 
       # Eventually enable one of those
@@ -335,7 +334,7 @@ jobs:
         #uses: JamesIves/github-pages-deploy-action@v4
         #with:
           #branch: gh-pages # The branch the action should deploy to.
-          #folder: /home/runner/builds/ # The folder the action should deploy.
+          #folder: ${{env.artifact_path}}/ # The folder the action should deploy.
 
 
       # /!\ This one requires a personal access token
@@ -343,7 +342,7 @@ jobs:
         #uses: SwiftDocOrg/github-wiki-publish-action@v1
         #with:
           #path: |
-            #/home/runner/builds/**
+            #${{env.artifact_path}}/**
         #env:
           #GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
 
@@ -354,5 +353,5 @@ jobs:
         #if: startsWith(github.ref, 'refs/tags/')
         #with:
           #files: |
-            #/home/runner/builds/**
+            #${{env.artifact_path}}/**
 
