@@ -72,6 +72,21 @@ extern "C" {
 #endif
 
 
+
+struct SemverClass
+{
+public:
+  SemverClass( const char* version );
+  SemverClass( int major, int minor=0, int patch=0 );
+  ~SemverClass() { semver_free(&_ver); }
+  semver_t* ver();
+private:
+  semver_t _ver = semver_t();
+};
+
+
+
+
 // Filesystem/memory helper for signature check and pem validation.
 // This is abstracted away to allow storage alternatives such as
 // PROGMEM, SD, SPIFFS, LittleFS or FatFS
@@ -114,7 +129,7 @@ struct FOTAConfig_t
 {
   const char*  name { nullptr };
   const char*  manifest_url { nullptr };
-  semver_t     version {};
+  SemverClass  sem {nullptr};
   bool         check_sig { false };
   bool         unsafe { false };
   bool         use_device_id { false };
@@ -182,14 +197,15 @@ public:
   FOTAConfig_t getConfig() { return _cfg; };
   void setConfig( FOTAConfig_t cfg ) { _cfg = cfg; }
 
-  [[deprecated("Use setManifestURL( String ) or cfg.manifest_url with setConfig( FOTAConfig_t )")]] String checkURL;
-  [[deprecated("Use cfg.use_device_id with setConfig( FOTAConfig_t )")]] bool useDeviceID;
+  [[deprecated("Use setManifestURL( String ) or cfg.manifest_url with setConfig( FOTAConfig_t )")]] String checkURL = "";
+  [[deprecated("Use cfg.use_device_id with setConfig( FOTAConfig_t )")]] bool useDeviceID = false;
 
 private:
 
   FOTAConfig_t _cfg;
 
-  semver_t _payloadVersion = semver_t();
+  SemverClass _payload_sem = SemverClass(0);
+
   String _firmwareUrl;
   String _flashFileSystemUrl;
 

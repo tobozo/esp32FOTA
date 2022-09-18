@@ -41,6 +41,30 @@
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
+
+SemverClass::SemverClass( const char* version )
+{
+  assert(version);
+  if (semver_parse_version(version, &_ver)) {
+      log_e( "Invalid semver string %s passed to constructor. Defaulting to 0", version );
+      _ver = semver_t{0,0,0};
+  }
+}
+
+SemverClass::SemverClass( int major, int minor, int patch )
+{
+  _ver = semver_t{major, minor, patch};
+}
+
+semver_t* SemverClass::ver()
+{
+  return &_ver;
+
+}
+
+
+
+
 // Filesystem helper for signature check and pem validation
 // This is abstracted away to allow storage alternatives such
 // as PROGMEM, SD, SPIFFS, LittleFS or FatFS
@@ -94,12 +118,12 @@ esp32FOTA::esp32FOTA( FOTAConfig_t cfg )
 esp32FOTA::esp32FOTA(String firmwareType, int firmwareVersion, bool validate, bool allow_insecure_https)
 {
     _cfg.name      = firmwareType.c_str();
-    _cfg.version   = semver_t{firmwareVersion};
+    _cfg.sem       = SemverClass( firmwareVersion );
     _cfg.check_sig = validate;
     _cfg.unsafe    = allow_insecure_https;
 
     setupCryptoAssets();
-    debugSemVer("Current firmware version", &_cfg.version );
+    debugSemVer("Current firmware version", _cfg.sem.ver() );
 }
 
 
@@ -108,21 +132,15 @@ esp32FOTA::esp32FOTA(String firmwareType, String firmwareSemanticVersion, bool v
     _cfg.name      = firmwareType.c_str();
     _cfg.check_sig = validate;
     _cfg.unsafe    = allow_insecure_https;
-
-    if (semver_parse(firmwareSemanticVersion.c_str(), &_cfg.version)) {
-        log_e( "Invalid semver string %s passed to constructor. Defaulting to 0", firmwareSemanticVersion.c_str() );
-        _cfg.version = semver_t {0};
-    }
+    _cfg.sem       = SemverClass( firmwareSemanticVersion.c_str() );
 
     setupCryptoAssets();
-    debugSemVer("Current firmware version", &_cfg.version );
+    debugSemVer("Current firmware version", _cfg.sem.ver() );
 }
 
 
 esp32FOTA::~esp32FOTA()
 {
-    semver_free(&_cfg.version);
-    semver_free(&_payloadVersion);
 }
 
 
@@ -524,25 +542,23 @@ bool esp32FOTA::checkJSONManifest(JsonVariant doc)
     }
     log_i("Payload type in manifest %s matches current firmware %s", doc["type"].as<const char *>(), _cfg.name );
 
-    semver_free(&_payloadVersion);
+    //semver_free(_payload_sem.ver());
 
     if(doc["version"].is<uint16_t>()) {
         uint16_t v = doc["version"].as<uint16_t>();
         log_d("JSON version: %d (int)", v);
-        _payloadVersion = semver_t {v};
+        _payload_sem = SemverClass(v);
     } else if (doc["version"].is<const char *>()) {
         const char* c = doc["version"].as<const char *>();
+        _payload_sem = SemverClass(c);
         log_d("JSON version: %s (semver)", c );
-        if (semver_parse(c, &_payloadVersion)) {
-            log_w( "Invalid semver string received in manifest. Defaulting to 0" );
-            _payloadVersion = semver_t {0};
-        }
     } else {
         log_e( "Invalid semver format received in manifest. Defaulting to 0" );
-        _payloadVersion = semver_t {0};
+        _payload_sem = SemverClass(0);
     }
 
-    debugSemVer("Payload firmware version", &_payloadVersion );
+    //debugSemVer("Payload firmware version", &_payloadVersion );
+    debugSemVer("Payload firmware version", _payload_sem.ver() );
 
     // Memoize some values to help with the decision tree
     bool has_url        = doc.containsKey("url") && doc["url"].is<String>();
@@ -592,9 +608,10 @@ bool esp32FOTA::checkJSONManifest(JsonVariant doc)
         return false;
     }
 
-    if (semver_compare(_payloadVersion, _cfg.version) == 1) {
+    if (semver_compare(*_payload_sem.ver(), *_cfg.sem.ver()) == 1) {
         return true;
     }
+
     return false;
 }
 
@@ -602,7 +619,20 @@ bool esp32FOTA::checkJSONManifest(JsonVariant doc)
 bool esp32FOTA::execHTTPcheck()
 {
     String useURL = String( _cfg.manifest_url );
+
+    // being deprecated, soon unsupported!
+    if( useURL=="" && checkURL!="" ) {
+      log_w("checkURL will soon be unsupported, use FOTAConfig_t::manifest_url instead!!");
+      useURL = checkURL;
+    }
+
     const char* rootcastr = nullptr;
+
+    // being deprecated, soon unsupported!
+    if( useDeviceID ) {
+      log_w("useDeviceID will soon be unsupported, use FOTAConfig_t::use_device_id instead!!");
+      _cfg.use_device_id = useDeviceID;
+    }
 
     if (_cfg.use_device_id) {
         // URL may already have GET values
@@ -709,7 +739,7 @@ String esp32FOTA::getDeviceID()
 void esp32FOTA::forceUpdate(String firmwareURL, bool validate )
 {
     _firmwareUrl = firmwareURL;
-    _cfg.check_sig   = validate;
+    _cfg.check_sig = validate;
     execOTA();
 }
 
@@ -744,13 +774,13 @@ void esp32FOTA::forceUpdate(bool validate )
 int esp32FOTA::getPayloadVersion()
 {
     log_w( "This function only returns the MAJOR version. For complete depth use getPayloadVersion(char *)." );
-    return _payloadVersion.major;
+    return _payload_sem.ver()->major;
 }
 
 
 void esp32FOTA::getPayloadVersion(char * version_string)
 {
-    semver_render( &_payloadVersion, version_string );
+    semver_render( _payload_sem.ver(), version_string );
 }
 
 
