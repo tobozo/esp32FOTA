@@ -121,17 +121,17 @@ jobs:
         pub_key_path=${{env.cert_path}}/rsa_key.pub
         root_ca_path=${{env.cert_path}}/root_ca.pem
         root_ca_h_path=${{env.cert_path}}/root_ca.h
-        pub_key_h_path=${{env.cert_path}}/rsa_key.h
+        pub_key_h_path=${{env.cert_path}}/pub_key.h
 
         mkdir -p ${{env.cert_path}}
 
-        ssl_host="${{inputs.manifest_host}}"
+        # ssl_host="${{inputs.manifest_host}}"
         root_ca_c_prefix="const char* root_ca =\\"
         pub_key_c_prefix="const char* pub_key =\\"
         c_suffix="\"\";"
 
         # Retrieve a copy of a certificate chain using openssl and split contents in "const char*" C/C++ declaration
-        openssl s_client -showcerts -connect $ssl_host:${{inputs.manifest_port}} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > $root_ca_path
+        openssl s_client -showcerts -connect ${{inputs.manifest_host}}:${{inputs.manifest_port}} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > $root_ca_path
         echo $root_ca_c_prefix > $root_ca_h_path
         cat $root_ca_path | awk '{print "\"" $0 "\\n\"\\"}' >> $root_ca_h_path
         echo $c_suffix >> $root_ca_h_path
@@ -142,6 +142,11 @@ jobs:
         echo $pub_key_c_prefix > $pub_key_h_path
         cat $pub_key_path | awk '{print "\"" $0 "\\n\"\\"}' > $pub_key_h_path
         echo $c_suffix >> $pub_key_h_path
+
+        cat $pub_key_path
+        cat $root_ca_path
+        cat $root_ca_h_path
+        cat $pub_key_h_path
 
     - name: Upload RootCA/PubKey as artifact
       uses: actions/upload-artifact@v2
@@ -224,11 +229,11 @@ jobs:
       if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
       run: |
         # Copy certs to data folder
-        cp /home/runner/certs/root_ca.pem ${{env.data_path}}/
-        cp /home/runner/certs/rsa_key.pub ${{env.data_path}}/
+        cp ${{env.cert_path}}/root_ca.pem ${{env.data_path}}/
+        cp ${{env.cert_path}}/rsa_key.pub ${{env.data_path}}/
         # Copy certs to TestSuite folder
-        cp /home/runner/certs/root_ca.pem ${{env.artifact_path}}/
-        cp /home/runner/certs/rsa_key.pub ${{env.artifact_path}}/
+        cp ${{env.cert_path}}/root_ca.pem ${{env.artifact_path}}/
+        cp ${{env.cert_path}}/rsa_key.pub ${{env.artifact_path}}/
 
     - name: Create and sign filesystem images
       run: |
