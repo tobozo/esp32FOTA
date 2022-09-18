@@ -88,8 +88,8 @@ jobs:
       privkey_path: /home/runner/certs/priv_key.pem
       spiffs_bin_path: /home/runner/builds/2.cert-in-spiffs.spiffs.bin
       littlefs_bin_path: /home/runner/builds/4.cert-in-littlefs.littlefs.bin
-      spiffs_signed_bin_path: /home/runner/builds/99.final-stage.spiffs.signed.bin
-      littlefs_signed_bin_path: /home/runner/builds/99.final-stage.littlefs.signed.bin
+      spiffs_signed_bin_path: /home/runner/builds/spiffs.signed.bin
+      littlefs_signed_bin_path: /home/runner/builds/littlefs.signed.bin
       firmware_json_path: /home/runner/builds/firmware.json
       firmware_json_template_path: .github/templates/firmware.test-suite.json
 
@@ -193,10 +193,11 @@ jobs:
     - name: Inject RootCA/PubKey if applicable
       if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
       run: |
-        root_ca_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/root_ca.h
-        cp ${{env.cert_path}}/root_ca.h $root_ca_path
-        pub_key_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/pub_key.h
-        cp ${{env.cert_path}}/root_ca.h $pub_key_path
+        full_ino_path=`find ${{env.work_path}}/ | grep "${{ matrix.sketch }}"`
+        root_ca_c_path=`dirname $full_ino_path`/root_ca.h
+        pub_key_c_path=`dirname $full_ino_path`/pub_key.h
+        cp ${{env.cert_path}}/root_ca.h $root_ca_c_path
+        cp ${{env.cert_path}}/pub_key.h $pub_key_c_path
 
     - name: Compile ${{ matrix.sketch }}
       uses: ArminJo/arduino-test-compile@v3
@@ -218,15 +219,16 @@ jobs:
         cp $full_ino_bin_path ${{env.artifact_path}}/${{ matrix.sketch }}.bin
         cp $full_ino_bin_path.img ${{env.artifact_path}}/${{ matrix.sketch }}.signed.bin
 
+
     - name: Prepare data folder
       if: (inputs.manifest_port  == '443' || inputs.manifest_port  == '4433')
       run: |
-        root_ca_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/root_ca.pem
-        pub_key_path=`dirname ${{env.test_path}}/${{ matrix.sketch }}`/rsa_key.pub
-        cp /home/runner/certs/root_ca.pem $root_ca_path
-        cp /home/runner/certs/rsa_key.pub $pub_key_path
-        cp /home/runner/certs/root_ca.pem examples/anyFS/data/
-        cp /home/runner/certs/rsa_key.pub examples/anyFS/data/
+        # Copy certs to data folder
+        cp /home/runner/certs/root_ca.pem ${{env.data_path}}/
+        cp /home/runner/certs/rsa_key.pub ${{env.data_path}}/
+        # Copy certs to TestSuite folder
+        cp /home/runner/certs/root_ca.pem ${{env.artifact_path}}/
+        cp /home/runner/certs/rsa_key.pub ${{env.artifact_path}}/
 
     - name: Create and sign filesystem images
       run: |
