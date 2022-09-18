@@ -27,7 +27,7 @@ on:
       manifest_url:
         description: '⚠️ Complete URL to JSON Manifest'
         required: true
-        default: 'https://server/fota/fota.json'
+        default: 'https://server/fota/firmware.json'
         type: string
 
       manifest_host:

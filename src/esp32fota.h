@@ -129,7 +129,7 @@ struct FOTAConfig_t
 {
   const char*  name { nullptr };
   const char*  manifest_url { nullptr };
-  SemverClass  sem {nullptr};
+  SemverClass  sem {0};
   bool         check_sig { false };
   bool         unsafe { false };
   bool         use_device_id { false };
@@ -204,7 +204,7 @@ private:
 
   FOTAConfig_t _cfg;
 
-  SemverClass _payload_sem = SemverClass(0);
+  SemverClass _payload_sem = SemverClass(0,0,0);
 
   String _firmwareUrl;
   String _flashFileSystemUrl;
