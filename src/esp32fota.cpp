@@ -46,7 +46,7 @@ SemverClass::SemverClass( const char* version )
 {
   assert(version);
   if (semver_parse_version(version, &_ver)) {
-      log_e( "Invalid semver string %s passed to constructor. Defaulting to 0", version );
+      Serial.printf( "Invalid semver string '%s' passed to constructor. Defaulting to 0\n", version );
       _ver = semver_t{0,0,0};
   }
 }
@@ -75,7 +75,7 @@ bool CryptoFileAsset::fs_read_file()
     size_t fsize = file.size();
     // if( file->size() > ESP.getFreeHeap() ) return false;
     if( !file ) {
-        log_e( "Failed to open %s for reading", path );
+        Serial.printf( "Failed to open %s for reading\n", path );
         return false;
     }
     contents = ""; // make sure the output bucket is empty
@@ -99,7 +99,7 @@ size_t CryptoFileAsset::size()
         }
         len = contents.size();
     } else {
-        log_e("No filesystem was set for %s!", path);
+        Serial.printf("No filesystem was set for %s!\n", path);
         return 0;
     }
     return len;
@@ -168,7 +168,7 @@ void esp32FOTA::setupCryptoAssets()
 bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *signature, uint32_t firmware_size )
 {
     int ret = 1;
-    size_t pubkeylen = _cfg.pub_key ? _cfg.pub_key->size()+1 : 0;
+    size_t pubkeylen = _cfg.pub_key ? _cfg.pub_key->size() : 0;
     const char* pubkeystr = _cfg.pub_key->get();
 
     if( pubkeylen <= 1 ) {
@@ -180,19 +180,19 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
     mbedtls_pk_init( &pk );
 
     if( ( ret = mbedtls_pk_parse_public_key( &pk, (const unsigned char*)pubkeystr, pubkeylen ) ) != 0 ) {
-        log_e( "Reading public key failed\n  ! mbedtls_pk_parse_public_key %d\n\n", ret );
+        Serial.printf( "Reading public key failed\n  ! mbedtls_pk_parse_public_key %d\n\n", ret );
         return false;
     }
 
     if( !mbedtls_pk_can_do( &pk, MBEDTLS_PK_RSA ) ) {
-        log_e( "Public key is not an rsa key -0x%x\n\n", -ret );
+        Serial.printf( "Public key is not an rsa key -0x%x\n\n", -ret );
         return false;
     }
 
     //const esp_partition_t* partition = esp_ota_get_next_update_partition(NULL);
 
     if( !partition ) {
-        log_e( "Could not find update partition!" );
+        Serial.println( "Could not find update partition!" );
         return false;
     }
 
@@ -207,7 +207,7 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
 
     uint8_t *_buffer = (uint8_t*)malloc(SPI_FLASH_SEC_SIZE);
     if(!_buffer){
-        log_e( "malloc failed" );
+        Serial.println( "malloc failed" );
         return false;
     }
 
@@ -233,7 +233,7 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
                 bytestoread = size;
             }
         } else {
-            log_e( "partitionRead failed!" );
+            Serial.println( "partitionRead failed!" );
             return false;
         }
     }
@@ -242,7 +242,7 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
 
     unsigned char *hash = (unsigned char*)malloc( mdinfo->size );
     if(!hash){
-        log_e( "malloc failed" );
+        Serial.println( "malloc failed" );
         return false;
     }
     mbedtls_md_finish( &rsa, hash );
@@ -269,7 +269,7 @@ void esp32FOTA::execOTA()
 {
     if( _flashFileSystemUrl != "" ) { // handle the spiffs partition first
         if( _fs ) { // Possible risk of overwriting certs and signatures, cancel flashing!
-            log_e("Cowardly refusing to overwrite U_SPIFFS. Use setCertFileSystem(nullptr) along with setPubKey()/setCAPem() to enable this feature.");
+            Serial.println("Cowardly refusing to overwrite U_SPIFFS. Use setCertFileSystem(nullptr) along with setPubKey()/setCAPem() to enable this feature.");
         } else {
             log_i("Will update U_SPIFFS");
             execOTA( U_SPIFFS, false );
@@ -320,7 +320,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
             }
             rootcastr = _cfg.root_ca->get();
             if( !rootcastr ) {
-                log_e("Unable to get RootCA, aborting");
+                Serial.println("Unable to get RootCA, aborting");
                 return;
             }
             client.setCACert( rootcastr );
@@ -409,8 +409,8 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
         Update.onProgress( onOTAProgress );
     } else {
         Update.onProgress( [](size_t progress, size_t size) {
-            if( progress == size || progress == 0 ) Serial.println();
-            Serial.print(".");
+            if( progress >= size ) Serial.println();
+            else if( progress > 0) Serial.print(".");
         });
     }
 
@@ -459,7 +459,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
 
     if( _cfg.check_sig ) { // check signature
 
-        log_d("Checking partition %d to validate", partition);
+        Serial.printf("Checking partition %d to validate\n", partition);
 
         getPartition( partition ); // retrieve the last updated partition pointer
 
@@ -472,7 +472,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
             return;
         }
 
-        log_d("Checking signature for partition %d...", partition);
+        Serial.printf("Checking signature for partition %d...\n", partition);
 
         if( !validate_sig( _target_partition, signature, contentLength ) ) {
 
@@ -531,7 +531,7 @@ void esp32FOTA::getPartition( int update_partition )
         esp_partition_iterator_release( iterator );
     } else {
         // wut ?
-        log_e("Unhandled partition type #%i, must be one of U_FLASH / U_SPIFFS", update_partition );
+        Serial.printf("Unhandled partition type #%i, must be one of U_FLASH / U_SPIFFS\n", update_partition );
     }
 }
 
@@ -626,7 +626,7 @@ bool esp32FOTA::execHTTPcheck()
 
     // being deprecated, soon unsupported!
     if( useURL=="" && checkURL!="" ) {
-      log_w("checkURL will soon be unsupported, use FOTAConfig_t::manifest_url instead!!");
+      Serial.println("checkURL will soon be unsupported, use FOTAConfig_t::manifest_url instead!!");
       useURL = checkURL;
     }
 
@@ -634,7 +634,7 @@ bool esp32FOTA::execHTTPcheck()
 
     // being deprecated, soon unsupported!
     if( useDeviceID ) {
-      log_w("useDeviceID will soon be unsupported, use FOTAConfig_t::use_device_id instead!!");
+      Serial.println("useDeviceID will soon be unsupported, use FOTAConfig_t::use_device_id instead!!");
       _cfg.use_device_id = useDeviceID;
     }
 
@@ -663,12 +663,12 @@ bool esp32FOTA::execHTTPcheck()
         } else {
             // We're downloading from a secure port, and want to validate the root cert.
             if( !_cfg.root_ca || _cfg.root_ca->size() == 0 ) {
-                log_e("A strict security context has been set but no RootCA was provided, aborting");
+                Serial.println("A strict security context has been set but no RootCA was provided, aborting");
                 return false;
             }
             rootcastr = _cfg.root_ca->get();
             if( !rootcastr ) {
-                log_e("Unable to get RootCA, aborting");
+                Serial.println("Unable to get RootCA, aborting");
                 return false;
             }
             log_i("Loading root_ca.pem");
@@ -690,7 +690,7 @@ bool esp32FOTA::execHTTPcheck()
 
     // only handle 200/301, fail on everything else
     if( httpCode != HTTP_CODE_OK && httpCode != HTTP_CODE_MOVED_PERMANENTLY ) {
-        log_e("Error on HTTP request (httpCode=%i)", httpCode);
+        Serial.printf("Error on HTTP request (httpCode=%i)\n", httpCode);
         http.end();
         return false;
     }
@@ -706,7 +706,7 @@ bool esp32FOTA::execHTTPcheck()
     http.end();  // We're done with HTTP - free the resources
 
     if (err) {  // Check for errors in parsing, or JSON length may exceed buffer size
-        log_e("JSON Parsing failed (err #%d, in=%d bytes, buff=%d bytes):\n%s\n", err, payload.length(), JSON_FW_BUFF_SIZE, payload.c_str() );
+        Serial.println("JSON Parsing failed (err #%d, in=%d bytes, buff=%d bytes):\n%s\n", err, payload.length(), JSON_FW_BUFF_SIZE, payload.c_str() );
         return false;
     }
 
@@ -763,7 +763,7 @@ void esp32FOTA::forceUpdate(bool validate )
         if (!_firmwareUrl) {
             // execHTTPcheck returns false when the manifest is malformed or when the version isn't
             // an upgrade. If _firmwareUrl isn't set we can't force an upgrade.
-            log_e("forceUpdate called, but unable to get _firmwareUrl from manifest via execHTTPcheck.");
+            Serial.println("forceUpdate called, but unable to get _firmwareUrl from manifest via execHTTPcheck.");
             return;
         }
     }
