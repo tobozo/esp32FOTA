@@ -53,12 +53,12 @@ SemverClass::SemverClass( const char* version )
 
 SemverClass::SemverClass( int major, int minor, int patch )
 {
-  _ver = semver_t{major, minor, patch};
+    _ver = semver_t{major, minor, patch};
 }
 
 semver_t* SemverClass::ver()
 {
-  return &_ver;
+    return &_ver;
 
 }
 
@@ -167,7 +167,10 @@ void esp32FOTA::setupCryptoAssets()
 // https://github.com/ARMmbed/mbedtls/blob/development/programs/pkey/rsa_verify.c
 bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *signature, uint32_t firmware_size )
 {
-    int ret = 1;
+    if( !partition ) {
+        Serial.println( "Could not find update partition!" );
+        return false;
+    }
     size_t pubkeylen = _cfg.pub_key ? _cfg.pub_key->size()+1 : 0;
 
     if( pubkeylen <= 1 ) {
@@ -190,6 +193,7 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
 
     log_d("Parsing public key");
 
+    int ret;
     if( ( ret = mbedtls_pk_parse_public_key( &pk, (const unsigned char*)pubkeystr, pubkeylen ) ) != 0 ) {
         Serial.printf( "Reading public key failed\n  ! mbedtls_pk_parse_public_key %d\n\n", ret );
         return false;
@@ -197,13 +201,6 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
 
     if( !mbedtls_pk_can_do( &pk, MBEDTLS_PK_RSA ) ) {
         Serial.printf( "Public key is not an rsa key -0x%x\n\n", -ret );
-        return false;
-    }
-
-    //const esp_partition_t* partition = esp_ota_get_next_update_partition(NULL);
-
-    if( !partition ) {
-        Serial.println( "Could not find update partition!" );
         return false;
     }
 
@@ -271,6 +268,7 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
         return true;
     }
 
+    Serial.println( "Validation failed, erasing the invalid partition" );
     // validation failed, overwrite the first few bytes so this partition won't boot!
 
     ESP.partitionEraseRange( partition, 0, ENCRYPTED_BLOCK_SIZE);
@@ -330,7 +328,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
         if (!_cfg.unsafe) {
             log_i( "Loading root_ca.pem" );
             if( !_cfg.root_ca || _cfg.root_ca->size() == 0 ) {
-                log_e("A strict security context has been set but no RootCA was provided");
+                Serial.println("A strict security context has been set but no RootCA was provided");
                 return;
             }
             rootcastr = _cfg.root_ca->get();
@@ -404,7 +402,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
         return;
     }
 
-    log_i("contentLength : %i, isValidContentType : %s", contentLength, String(isValidContentType));
+    log_d("contentLength : %i, isValidContentType : %s", contentLength, String(isValidContentType));
 
     if( _cfg.check_sig && contentLength != UPDATE_SIZE_UNKNOWN ) {
         // If firmware is signed, extract signature and decrease content-length by 512 bytes for signature
@@ -476,7 +474,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
 
         Serial.printf("Checking partition %d to validate\n", partition);
 
-        getPartition( partition ); // retrieve the last updated partition pointer
+        getPartition( partition ); // updated partition => '_target_partition' pointer
 
         #define CHECK_SIG_ERROR_PARTITION_NOT_FOUND -1
         #define CHECK_SIG_ERROR_VALIDATION_FAILED   -2
@@ -489,15 +487,20 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
 
         Serial.printf("Checking signature for partition %d...\n", partition);
 
-        if( !validate_sig( _target_partition, signature, contentLength ) ) {
+        const esp_partition_t* running_partition = esp_ota_get_running_partition();
 
-            if( partition == U_FLASH ) { // partition was marked as bootable, but signature validation failed, undo!
-                const esp_partition_t* bootable_partition = esp_ota_get_running_partition();
-                esp_ota_set_boot_partition( bootable_partition );
-            } else if( partition == U_SPIFFS ) { // bummer!
-                // SPIFFS/LittleFS partition was already overwritten and unlike U_FLASH (has OTA0/OTA1) this can't be rolled back.
-                // TODO: onValidationFail decision tree with [erase-partition, mark-unsafe, keep-as-is]
-            }
+        if( partition == U_FLASH ) {
+            // /!\ An OTA partition is automatically set as bootable after being successfully
+            // flashed by the Update library.
+            // Since we want to validate before enabling the partition, we need to cancel that
+            // by temporarily reassigning the bootable flag to the running-partition instead
+            // of the next-partition.
+            esp_ota_set_boot_partition( running_partition );
+            // By doing so the ESP will NOT boot any unvalidated partition should a crash occur
+            // during signature validation.
+        }
+
+        if( !validate_sig( _target_partition, signature, contentLength ) ) {
             // erase partition
             esp_partition_erase_range( _target_partition, _target_partition->address, _target_partition->size );
 
@@ -511,6 +514,10 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
             return;
         } else {
             Serial.println("Signature check successful!");
+            if( partition == U_FLASH ) {
+                // Set updated partition as bootable now that it's been verified
+                esp_ota_set_boot_partition( _target_partition );
+            }
         }
     }
     //Serial.println("OTA Update complete!");
@@ -561,8 +568,8 @@ bool esp32FOTA::checkJSONManifest(JsonVariant doc)
     }
     log_i("Payload type in manifest %s matches current firmware %s", doc["type"].as<const char *>(), _cfg.name );
 
-    //semver_free(_payload_sem.ver());
     _flashFileSystemUrl = "";
+    _firmwareUrl        = "";
 
     if(doc["version"].is<uint16_t>()) {
         uint16_t v = doc["version"].as<uint16_t>();
@@ -642,16 +649,16 @@ bool esp32FOTA::execHTTPcheck()
 
     // being deprecated, soon unsupported!
     if( useURL=="" && checkURL!="" ) {
-      Serial.println("checkURL will soon be unsupported, use FOTAConfig_t::manifest_url instead!!");
-      useURL = checkURL;
+        Serial.println("checkURL will soon be unsupported, use FOTAConfig_t::manifest_url instead!!");
+        useURL = checkURL;
     }
 
     const char* rootcastr = nullptr;
 
     // being deprecated, soon unsupported!
     if( useDeviceID ) {
-      Serial.println("useDeviceID will soon be unsupported, use FOTAConfig_t::use_device_id instead!!");
-      _cfg.use_device_id = useDeviceID;
+        Serial.println("useDeviceID will soon be unsupported, use FOTAConfig_t::use_device_id instead!!");
+        _cfg.use_device_id = useDeviceID;
     }
 
     if (_cfg.use_device_id) {
