@@ -706,7 +706,7 @@ bool esp32FOTA::execHTTPcheck()
     http.end();  // We're done with HTTP - free the resources
 
     if (err) {  // Check for errors in parsing, or JSON length may exceed buffer size
-        Serial.println("JSON Parsing failed (err #%d, in=%d bytes, buff=%d bytes):\n%s\n", err, payload.length(), JSON_FW_BUFF_SIZE, payload.c_str() );
+        Serial.printf("JSON Parsing failed (%s, in=%d bytes, buff=%d bytes):\n%s\n", err.c_str(), payload.length(), JSON_FW_BUFF_SIZE, payload.c_str() );
         return false;
     }
 
