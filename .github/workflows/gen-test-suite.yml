@@ -126,21 +126,25 @@ jobs:
         mkdir -p ${{env.cert_path}}
 
         # ssl_host="${{inputs.manifest_host}}"
-        root_ca_c_prefix="const char* root_ca =\\"
-        pub_key_c_prefix="const char* pub_key =\\"
-        c_suffix="\"\";"
+        #root_ca_c_prefix="const char* root_ca =\\"
+        #pub_key_c_prefix="const char* pub_key =\\"
+        #c_suffix="\"\";"
+
+        root_ca_c_prefix="const char* root_ca = R\"MULTILINE("
+        pub_key_c_prefix="const char* pub_key = R\"MULTILINE("
+        c_suffix=")MULTILINE\";"
 
         # Retrieve a copy of a certificate chain using openssl and split contents in "const char*" C/C++ declaration
         openssl s_client -showcerts -connect ${{inputs.manifest_host}}:${{inputs.manifest_port}} </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > $root_ca_path
         echo $root_ca_c_prefix > $root_ca_h_path
-        cat $root_ca_path | awk '{print "\"" $0 "\\n\"\\"}' >> $root_ca_h_path
+        cat $root_ca_path >> $root_ca_h_path
         echo $c_suffix >> $root_ca_h_path
 
         # Generate privkey for later signing and split contents in "const char*" C/C++ declaration
         openssl genrsa -out ${{env.privkey_path}} 4096
         openssl rsa -in ${{env.privkey_path}} -pubout > $pub_key_path
         echo $pub_key_c_prefix > $pub_key_h_path
-        cat $pub_key_path | awk '{print "\"" $0 "\\n\"\\"}' > $pub_key_h_path
+        cat $pub_key_path >> $pub_key_h_path
         echo $c_suffix >> $pub_key_h_path
 
         cat $pub_key_path
