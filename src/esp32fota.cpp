@@ -168,16 +168,27 @@ void esp32FOTA::setupCryptoAssets()
 bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *signature, uint32_t firmware_size )
 {
     int ret = 1;
-    size_t pubkeylen = _cfg.pub_key ? _cfg.pub_key->size() : 0;
-    const char* pubkeystr = _cfg.pub_key->get();
+    size_t pubkeylen = _cfg.pub_key ? _cfg.pub_key->size()+1 : 0;
 
     if( pubkeylen <= 1 ) {
+        Serial.println("Public key empty, can't validate!");
         return false;
     }
+
+    const char* pubkeystr = _cfg.pub_key->get();
+
+    if( !pubkeystr ) {
+        Serial.println("Unable to get public key, can't validate!");
+        return false;
+    }
+
+    log_d("Creating mbedtls context");
 
     mbedtls_pk_context pk;
     mbedtls_md_context_t rsa;
     mbedtls_pk_init( &pk );
+
+    log_d("Parsing public key");
 
     if( ( ret = mbedtls_pk_parse_public_key( &pk, (const unsigned char*)pubkeystr, pubkeylen ) ) != 0 ) {
         Serial.printf( "Reading public key failed\n  ! mbedtls_pk_parse_public_key %d\n\n", ret );
@@ -196,6 +207,8 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
         return false;
     }
 
+    log_d("Initing mbedtls");
+
     const mbedtls_md_info_t *mdinfo = mbedtls_md_info_from_type( MBEDTLS_MD_SHA256 );
     mbedtls_md_init( &rsa );
     mbedtls_md_setup( &rsa, mdinfo, 0 );
@@ -210,6 +223,8 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
         Serial.println( "malloc failed" );
         return false;
     }
+
+    log_d("Parsing content");
 
     //Serial.printf( "Reading partition (%i sectors, sec_size: %i)\r\n", size, bytestoread );
     while( bytestoread > 0 ) {
@@ -269,7 +284,7 @@ void esp32FOTA::execOTA()
 {
     if( _flashFileSystemUrl != "" ) { // handle the spiffs partition first
         if( _fs ) { // Possible risk of overwriting certs and signatures, cancel flashing!
-            Serial.println("Cowardly refusing to overwrite U_SPIFFS. Use setCertFileSystem(nullptr) along with setPubKey()/setCAPem() to enable this feature.");
+            Serial.println("Cowardly refusing to overwrite U_SPIFFS with "+_flashFileSystemUrl+". Use setCertFileSystem(nullptr) along with setPubKey()/setCAPem() to enable this feature.");
         } else {
             log_i("Will update U_SPIFFS");
             execOTA( U_SPIFFS, false );
@@ -547,6 +562,7 @@ bool esp32FOTA::checkJSONManifest(JsonVariant doc)
     log_i("Payload type in manifest %s matches current firmware %s", doc["type"].as<const char *>(), _cfg.name );
 
     //semver_free(_payload_sem.ver());
+    _flashFileSystemUrl = "";
 
     if(doc["version"].is<uint16_t>()) {
         uint16_t v = doc["version"].as<uint16_t>();
