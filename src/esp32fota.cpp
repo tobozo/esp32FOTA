@@ -459,6 +459,8 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
 
     if( _cfg.check_sig ) { // check signature
 
+        log_d("Checking partition %d to validate", partition);
+
         getPartition( partition ); // retrieve the last updated partition pointer
 
         #define CHECK_SIG_ERROR_PARTITION_NOT_FOUND -1
@@ -469,6 +471,8 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
             if( onUpdateCheckFail ) onUpdateCheckFail( partition, CHECK_SIG_ERROR_PARTITION_NOT_FOUND );
             return;
         }
+
+        log_d("Checking signature for partition %d...", partition);
 
         if( !validate_sig( _target_partition, signature, contentLength ) ) {
 
@@ -691,11 +695,11 @@ bool esp32FOTA::execHTTPcheck()
         return false;
     }
 
-    String payload = http.getString();
-
     // TODO: use payload.length() to speculate on JSONResult buffer size
     #define JSON_FW_BUFF_SIZE 2048
     DynamicJsonDocument JSONResult( JSON_FW_BUFF_SIZE );
+
+    String payload = http.getString();
 
     DeserializationError err = deserializeJson( JSONResult, payload.c_str() );
 
