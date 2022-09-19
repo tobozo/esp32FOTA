@@ -54,3 +54,4 @@ jobs:
         with:
           project-type: library
           library-manager: false
+          recursive: true
