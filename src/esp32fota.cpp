@@ -98,6 +98,7 @@ size_t CryptoFileAsset::size()
             log_e("Invalid contents!");
             return 0;
         }
+        len = contents.size() + 1;
     } else {
         Serial.printf("No filesystem was set for %s!\n", path);
         return 0;
@@ -298,9 +299,11 @@ void esp32FOTA::execOTA()
 void esp32FOTA::execOTA( int partition, bool restart_after )
 {
     String UpdateURL = "";
+    String PartitionLabel = "";
 
     switch( partition ) {
         case U_SPIFFS: // spiffs/littlefs/fatfs partition
+            PartitionLabel = "data";
             if( _flashFileSystemUrl == "" ) {
                 log_i("[SKIP] No spiffs/littlefs/fatfs partition was speficied");
                 return;
@@ -309,6 +312,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
         break;
         case U_FLASH: // app partition (default)
         default:
+            PartitionLabel = "app" + String( partition );
             partition = U_FLASH;
             UpdateURL = _firmwareUrl;
         break;
@@ -328,7 +332,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
         if (!_cfg.unsafe) {
             log_i( "Loading root_ca.pem" );
             if( !_cfg.root_ca || _cfg.root_ca->size() == 0 ) {
-                Serial.println("A strict security context has been set but no RootCA was provided");
+                Serial.println("A strict security context has been set for "+PartitionLabel+" partition but no RootCA was provided");
                 return;
             }
             rootcastr = _cfg.root_ca->get();
