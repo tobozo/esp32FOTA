@@ -83,7 +83,8 @@ bool CryptoFileAsset::fs_read_file()
         contents.push_back( file.read() );
     }
     file.close();
-    return contents.size()>0 && fsize==contents.size();
+    len = contents.size() + 1;
+    return len>0 && fsize==len;
 }
 
 
@@ -94,10 +95,9 @@ size_t CryptoFileAsset::size()
     }
     if( fs ) { // fetch file contents
         if( ! fs_read_file() ) {
-            log_w("Invalid contents!");
+            log_e("Invalid contents!");
             return 0;
         }
-        len = contents.size();
     } else {
         Serial.printf("No filesystem was set for %s!\n", path);
         return 0;
@@ -171,7 +171,7 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
         Serial.println( "Could not find update partition!" );
         return false;
     }
-    size_t pubkeylen = _cfg.pub_key ? _cfg.pub_key->size()+1 : 0;
+    size_t pubkeylen = _cfg.pub_key ? _cfg.pub_key->size() : 0;
 
     if( pubkeylen <= 1 ) {
         Serial.println("Public key empty, can't validate!");
@@ -195,7 +195,7 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
 
     int ret;
     if( ( ret = mbedtls_pk_parse_public_key( &pk, (const unsigned char*)pubkeystr, pubkeylen ) ) != 0 ) {
-        Serial.printf( "Reading public key failed\n  ! mbedtls_pk_parse_public_key %d\n\n", ret );
+        Serial.printf( "Parsing public key failed\n  ! mbedtls_pk_parse_public_key %d (%d bytes)\n%s\n", ret, pubkeylen, pubkeystr );
         return false;
     }
 
