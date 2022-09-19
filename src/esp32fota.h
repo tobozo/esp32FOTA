@@ -157,8 +157,8 @@ public:
   void forceUpdate(String firmwareHost, uint16_t firmwarePort, String firmwarePath, bool validate );
   void forceUpdate(String firmwareURL, bool validate );
   void forceUpdate(bool validate );
-  void execOTA();
-  void execOTA( int partition, bool restart_after = true );
+  bool execOTA();
+  bool execOTA( int partition, bool restart_after = true );
   bool execHTTPcheck();
   int getPayloadVersion();
   void getPayloadVersion(char * version_string);

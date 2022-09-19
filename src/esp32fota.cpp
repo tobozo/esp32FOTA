@@ -98,7 +98,6 @@ size_t CryptoFileAsset::size()
             log_e("Invalid contents!");
             return 0;
         }
-        len = contents.size() + 1;
     } else {
         Serial.printf("No filesystem was set for %s!\n", path);
         return 0;
@@ -279,24 +278,25 @@ bool esp32FOTA::validate_sig( const esp_partition_t* partition, unsigned char *s
 
 
 // OTA Logic
-void esp32FOTA::execOTA()
+bool esp32FOTA::execOTA()
 {
-    if( _flashFileSystemUrl != "" ) { // handle the spiffs partition first
+    if( _flashFileSystemUrl != "" ) { // a data partition was specified in the json manifest, handle the spiffs partition first
         if( _fs ) { // Possible risk of overwriting certs and signatures, cancel flashing!
             Serial.println("Cowardly refusing to overwrite U_SPIFFS with "+_flashFileSystemUrl+". Use setCertFileSystem(nullptr) along with setPubKey()/setCAPem() to enable this feature.");
+            return false;
         } else {
-            log_i("Will update U_SPIFFS");
-            execOTA( U_SPIFFS, false );
+            log_i("Will check if U_SPIFFS needs updating");
+            if( !execOTA( U_SPIFFS, false ) ) return false;
         }
     } else {
         log_i("This update is for U_FLASH only");
     }
     // handle the application partition and restart on success
-    execOTA( U_FLASH, true );
+    return execOTA( U_FLASH, true );
 }
 
 
-void esp32FOTA::execOTA( int partition, bool restart_after )
+bool esp32FOTA::execOTA( int partition, bool restart_after )
 {
     String UpdateURL = "";
     String PartitionLabel = "";
@@ -306,7 +306,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
             PartitionLabel = "data";
             if( _flashFileSystemUrl == "" ) {
                 log_i("[SKIP] No spiffs/littlefs/fatfs partition was speficied");
-                return;
+                return true;
             }
             UpdateURL = _flashFileSystemUrl;
         break;
@@ -331,14 +331,18 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
     if( UpdateURL.substring( 0, 5 ) == "https" ) {
         if (!_cfg.unsafe) {
             log_i( "Loading root_ca.pem" );
-            if( !_cfg.root_ca || _cfg.root_ca->size() == 0 ) {
+            if( !_cfg.root_ca ) {
                 Serial.println("A strict security context has been set for "+PartitionLabel+" partition but no RootCA was provided");
-                return;
+                return false;
             }
             rootcastr = _cfg.root_ca->get();
+            if( _cfg.root_ca->size() == 0 ) {
+                Serial.println("A strict security context has been set for "+PartitionLabel+" partition but an empty RootCA was provided");
+                return false;
+            }
             if( !rootcastr ) {
-                Serial.println("Unable to get RootCA, aborting");
-                return;
+                Serial.println("Unable to get RootCA for "+PartitionLabel+", aborting");
+                return false;
             }
             client.setCACert( rootcastr );
         } else {
@@ -393,7 +397,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
             default:  log_e("Status: %i. Please check your setup", httpCode); break;
         }
         http.end();
-        return;
+        return false;
     }
 
     // TODO: Not all streams respond with a content length.
@@ -403,7 +407,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
     if( !contentLength || !isValidContentType ) {
         Serial.printf("There was no content in the http response: (length: %i, valid: %s)\n", contentLength, isValidContentType?"true":"false");
         http.end();
-        return;
+        return false;
     }
 
     log_d("contentLength : %i, isValidContentType : %s", contentLength, String(isValidContentType));
@@ -419,7 +423,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
         Serial.println("Not enough space to begin OTA, partition size mismatch?");
         http.end();
         if( onUpdateBeginFail ) onUpdateBeginFail( partition );
-        return;
+        return false;
     }
 
     if( onOTAProgress ) {
@@ -467,7 +471,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
         // #define UPDATE_ERROR_NO_PARTITION       (10)
         // #define UPDATE_ERROR_BAD_ARGUMENT       (11)
         // #define UPDATE_ERROR_ABORT              (12)
-        return;
+        return false;
     }
 
     http.end();
@@ -486,7 +490,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
         if( !_target_partition ) {
             Serial.println("Can't access partition #%i to check signature!");
             if( onUpdateCheckFail ) onUpdateCheckFail( partition, CHECK_SIG_ERROR_PARTITION_NOT_FOUND );
-            return;
+            return false;
         }
 
         Serial.printf("Checking signature for partition %d...\n", partition);
@@ -515,7 +519,7 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
                 Serial.println("Rebooting.");
                 ESP.restart();
             }
-            return;
+            return false;
         } else {
             Serial.println("Signature check successful!");
             if( partition == U_FLASH ) {
@@ -534,10 +538,11 @@ void esp32FOTA::execOTA( int partition, bool restart_after )
             Serial.println("Rebooting.");
             ESP.restart();
         }
-        return;
+        return true;
     } else {
         Serial.println("Update not finished! Something went wrong!");
     }
+    return false;
 }
 
 
@@ -689,13 +694,17 @@ bool esp32FOTA::execHTTPcheck()
             client.setInsecure();
         } else {
             // We're downloading from a secure port, and want to validate the root cert.
-            if( !_cfg.root_ca || _cfg.root_ca->size() == 0 ) {
-                Serial.println("A strict security context has been set but no RootCA was provided, aborting");
+            if( !_cfg.root_ca ) {
+                Serial.println("A strict security context has been set to fetch json manifest, but no RootCA was provided, aborting");
                 return false;
             }
             rootcastr = _cfg.root_ca->get();
+            if( _cfg.root_ca->size() == 0 ) {
+                Serial.println("A strict security context has been set to fetch json manifest, but an empty RootCA was provided, aborting");
+                return false;
+            }
             if( !rootcastr ) {
-                Serial.println("Unable to get RootCA, aborting");
+                Serial.println("Unable to get RootCA to fetch json manifest, aborting");
                 return false;
             }
             log_i("Loading root_ca.pem");
