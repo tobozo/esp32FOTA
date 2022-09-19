@@ -72,19 +72,19 @@ semver_t* SemverClass::ver()
 bool CryptoFileAsset::fs_read_file()
 {
     File file = fs->open( path );
-    size_t fsize = file.size();
     // if( file->size() > ESP.getFreeHeap() ) return false;
     if( !file ) {
         Serial.printf( "Failed to open %s for reading\n", path );
         return false;
     }
     contents = ""; // make sure the output bucket is empty
+    len = file.size()+1;
     while( file.available() ) {
         contents.push_back( file.read() );
     }
     file.close();
-    len = contents.size() + 1;
-    return len>0 && fsize==len;
+    //len = ;
+    return len>0 /*&& fsize==contents.size() + 1*/;
 }
 
 
@@ -338,6 +338,7 @@ bool esp32FOTA::execOTA( int partition, bool restart_after )
             rootcastr = _cfg.root_ca->get();
             if( _cfg.root_ca->size() == 0 ) {
                 Serial.println("A strict security context has been set for "+PartitionLabel+" partition but an empty RootCA was provided");
+                Serial.println(rootcastr);
                 return false;
             }
             if( !rootcastr ) {
