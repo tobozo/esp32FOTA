@@ -17,7 +17,7 @@
     }
   ],
   "frameworks": "arduino",
-  "headers": "esp32fota.h",
+  "headers": "esp32FOTA.hpp",
   "platforms": [
     "esp32",
     "espressif32"

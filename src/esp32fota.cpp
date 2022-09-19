@@ -83,8 +83,7 @@ bool CryptoFileAsset::fs_read_file()
         contents.push_back( file.read() );
     }
     file.close();
-    //len = ;
-    return len>0 /*&& fsize==contents.size() + 1*/;
+    return len>0;
 }
 
 
@@ -330,7 +329,6 @@ bool esp32FOTA::execOTA( int partition, bool restart_after )
     log_i("Connecting to: %s\r\n", UpdateURL.c_str() );
     if( UpdateURL.substring( 0, 5 ) == "https" ) {
         if (!_cfg.unsafe) {
-            log_i( "Loading root_ca.pem" );
             if( !_cfg.root_ca ) {
                 Serial.println("A strict security context has been set for "+PartitionLabel+" partition but no RootCA was provided");
                 return false;
@@ -345,6 +343,7 @@ bool esp32FOTA::execOTA( int partition, bool restart_after )
                 Serial.println("Unable to get RootCA for "+PartitionLabel+", aborting");
                 return false;
             }
+            Serial.println("Loading root_ca.pem");
             client.setCACert( rootcastr );
         } else {
             // We're downloading from a secure URL, but we don't want to validate the root cert.
@@ -395,8 +394,17 @@ bool esp32FOTA::execOTA( int partition, bool restart_after )
             case 418: log_e("Status: 418 (I'm a teapot), Brit alert!"); break;
             case 429: log_e("Status: 429 (Too many requests), throttle things down?"); break;
             case 500: log_e("Status: 500 (Internal Server Error), you broke the webs!"); break;
-            default:  log_e("Status: %i. Please check your setup", httpCode); break;
+            default:
+                // This error may be a false positive or a consequence of the network being disconnected.
+                // Since the network is controlled from outside this class, only significant error messages are reported.
+                if( httpCode > 0 ) {
+                    Serial.printf("Server responded with HTTP Status '%i' when calling url '%s'. Please check your setup\n", httpCode, UpdateURL.c_str() );
+                } else {
+                    log_d("Unknown HTTP response");
+                }
+            break;
         }
+
         http.end();
         return false;
     }
@@ -708,7 +716,7 @@ bool esp32FOTA::execHTTPcheck()
                 Serial.println("Unable to get RootCA to fetch json manifest, aborting");
                 return false;
             }
-            log_i("Loading root_ca.pem");
+            Serial.println("Loading root_ca.pem");
             client.setCACert( rootcastr );
         }
         http.begin( client, useURL );
@@ -727,7 +735,13 @@ bool esp32FOTA::execHTTPcheck()
 
     // only handle 200/301, fail on everything else
     if( httpCode != HTTP_CODE_OK && httpCode != HTTP_CODE_MOVED_PERMANENTLY ) {
-        Serial.printf("Error on HTTP request (httpCode=%i)\n", httpCode);
+        // This error may be a false positive or a consequence of the network being disconnected.
+        // Since the network is controlled from outside this class, only significant error messages are reported.
+        if( httpCode > 0 ) {
+            Serial.printf("Error on HTTP request (httpCode=%i)\n", httpCode);
+        } else {
+            log_d("Unknown HTTP response");
+        }
         http.end();
         return false;
     }
