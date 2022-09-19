@@ -48,7 +48,7 @@ CryptoFileAsset *MyRootCA = new CryptoFileAsset( "/root_ca.pem", &LittleFS );
 // CryptoMemAsset *MyRootCA = new CryptoMemAsset("Certificates Chain", root_ca, strlen(root_ca)+1 );
 
 // CryptoFileAsset *MyRSAKey = new CryptoFileAsset( "/rsa_key.pub", &SPIFFS );
-// CryptoFileAsset *MyRSAKey = new CryptoFileAsset( "/rsa_key.pub", &LittleFS );
+CryptoFileAsset *MyRSAKey = new CryptoFileAsset( "/rsa_key.pub", &LittleFS );
 // CryptoMemAsset *MyRSAKey = new CryptoMemAsset("RSA Public Key", pub_key, strlen(pub_key)+1 );
 
 
@@ -90,7 +90,7 @@ void setup()
     cfg.check_sig    = check_signature;
     cfg.unsafe       = disable_security;
     cfg.root_ca      = MyRootCA;
-    //cfg.pub_key      = MyRSAKey;
+    cfg.pub_key      = MyRSAKey;
     FOTA.setConfig( cfg );
   }
 
